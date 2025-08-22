@@ -149,6 +149,41 @@ class PopoutModule {
       type: Boolean,
     });
 
+    // Mirror document-level jQuery events to popped out windows
+    const origOn = jQuery.fn.on;
+    const origOff = jQuery.fn.off;
+    const self = this;
+
+    jQuery.fn.on = function (...args) {
+      const target = this[0];
+      const result = origOn.apply(this, args);
+      if (target === document || target === document.body) {
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed) continue;
+          const docTarget =
+            target === document ? win.document : win.document.body;
+          origOn.apply(jQuery(docTarget), args);
+        }
+      }
+      return result;
+    };
+
+    jQuery.fn.off = function (...args) {
+      const target = this[0];
+      const result = origOff.apply(this, args);
+      if (target === document || target === document.body) {
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed) continue;
+          const docTarget =
+            target === document ? win.document : win.document.body;
+          origOff.apply(jQuery(docTarget), args);
+        }
+      }
+      return result;
+    };
+
     // We replace the games window registry with a proxy object so we can intercept
     // every new application window creation event.
     const handler = {
