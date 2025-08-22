@@ -8,11 +8,13 @@ This module **does not work** in the Electron window (the standalone FVTT Applic
 
 This module is currently tested on Chrome and ~Firefox~ and under MacOS, ~Linux~, and Windows 10.
 
-This module is only tested against the base Foundry application using the DnD5e system. While most other systems and modules _should_ work; Just because there is a PopOut! button on a window, does not guarantee that it _will_ work.
-
-Systems such as Pathfinder that heavily make use of JQuery or JQuery plugins will have severely limited functionality.
+This module is primarily tested against the base Foundry application using the DnD5e system and has also been tested with PF2e. While most other systems and modules _should_ work; just because there is a PopOut! button on a window does not guarantee that it _will_ work.
 
 In addition, systems using more advanced frameworks like react/svelte/vue will likely _not_ work and can not be made to work.
+
+### jQuery global handlers and PF2e
+
+Pop-out windows now mirror jQuery's global event handlers so modules relying on them behave correctly. PopOut! has been tested with the Pathfinder Second Edition (PF2e) system.
 
 Due to the necessarily brittle nature of how this module is implemented, other modules may lack functionality or break completely when popped out. See the Compatibility section for a description of how you can fix this if you are module developer.
 
