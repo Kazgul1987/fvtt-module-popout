@@ -14,7 +14,7 @@ In addition, systems using more advanced frameworks like react/svelte/vue will l
 
 ### jQuery global handlers and PF2e
 
-Pop-out windows now mirror jQuery's global event handlers so modules relying on them behave correctly. PopOut! has been tested with the Pathfinder Second Edition (PF2e) system.
+Pop-out windows now mirror jQuery's global event handlers so modules relying on them behave correctly. PopOut! has been tested with the Pathfinder Second Edition (PF2e) system, and for PF2e this cloning is always enabled to ensure skill check dialogs function in popped-out sheets.
 
 Due to the necessarily brittle nature of how this module is implemented, other modules may lack functionality or break completely when popped out. See the Compatibility section for a description of how you can fix this if you are module developer.
 
