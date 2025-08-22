@@ -148,6 +148,14 @@ class PopoutModule {
       default: false,
       type: Boolean,
     });
+    game.settings.register("popout", "cloneDocumentEvents", {
+      name: "Clone document event handlers",
+      hint: "Copy delegated document and body event handlers into popout windows. Enabled automatically for PF2e.",
+      scope: "client",
+      config: true,
+      default: game.system.id === "pf2e",
+      type: Boolean,
+    });
 
     // Mirror document-level jQuery events to popped out windows
     const origOn = jQuery.fn.on;
@@ -495,6 +503,35 @@ class PopoutModule {
     }
 
     return null;
+  }
+
+  cloneDelegatedEvents(popout) {
+    const jq = popout.jQuery || window.jQuery;
+    const clone = (source, target) => {
+      const events = window.jQuery._data(source, "events");
+      if (!events) return;
+      for (const [type, handlers] of Object.entries(events)) {
+        for (const handler of handlers) {
+          if (!handler.selector) continue;
+          const namespace = handler.namespace ? `.${handler.namespace}` : "";
+          const eventName = `${type}${namespace}`;
+          if (handler.data !== undefined) {
+            jq(target).on(
+              eventName,
+              handler.selector,
+              handler.data,
+              handler.handler,
+            );
+          } else {
+            jq(target).on(eventName, handler.selector, handler.handler);
+          }
+        }
+      }
+    };
+    clone(document, popout.document);
+    if (document.body && popout.document.body) {
+      clone(document.body, popout.document.body);
+    }
   }
 
   attachApplicationV2Events(app, clonedNode, popout) {
@@ -1188,64 +1225,11 @@ class PopoutModule {
         // For v13, if no API available, let the event bubble normally
       });
 
-      // COMPAT(posnet: 2022-09-17) v9
-
-      if (game.release.generation < 10) {
-        // From: TextEditor.activateListeners();
-        // These event listeners don't get migrated because they are attached to a jQuery
-        // selected body. This could be more of an issue in future as anyone doing a delegated
-        // event handler will also fail. But that is bad practice.
-        // The following regex will find examples of delegated event handlers in foundry.js
-        // `on\(("|')[^'"]+("|'), *("|')`
-        const jBody = $(body);
-        jBody.on(
-          "click",
-          "a.entity-link",
-          window.TextEditor._onClickEntityLink !== undefined
-            ? window.TextEditor._onClickEntityLink
-            : window.TextEditor._onClickContentLink,
-        );
-        jBody.on(
-          "dragstart",
-          "a.entity-link",
-          window.TextEditor._onDragEntityLink,
-        );
-        jBody.on(
-          "click",
-          "a.inline-roll",
-          window.TextEditor._onClickInlineRoll,
-        );
-      } else {
-        // From: TextEditor.activateListeners();
-        // These event listeners don't get migrated because they are attached to a jQuery
-        // selected body. This could be more of an issue in future as anyone doing a delegated
-        // event handler will also fail. But that is bad practice.
-        // The following regex will find examples of delegated event handlers in foundry.js
-        // `on\(("|')[^'"]+("|'), *("|')`
-        // Only attach jQuery delegated events for ApplicationV1
-        if (!isApplicationV2) {
-          const jBody = $(body);
-          if (game.release.generation < 13) {
-            jBody.on(
-              "click",
-              "a.content-link",
-              window.TextEditor._onClickEntityLink !== undefined
-                ? window.TextEditor._onClickEntityLink
-                : window.TextEditor._onClickContentLink,
-            );
-            jBody.on(
-              "dragstart",
-              "a.content-link",
-              window.TextEditor._onDragEntityLink !== undefined
-                ? window.TextEditor._onDragEntityLink
-                : window.TextEditor._onDragContentLink,
-            );
-          }
-          jBody.on(
-            "click",
-            "a.inline-roll",
-            window.TextEditor._onClickInlineRoll,
-          );
+      if (game.settings.get("popout", "cloneDocumentEvents")) {
+        try {
+          this.cloneDelegatedEvents(popout);
+        } catch (err) {
+          this.log("Failed to clone document events", err);
         }
       }
 
