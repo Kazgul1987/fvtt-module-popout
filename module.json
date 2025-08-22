@@ -48,7 +48,7 @@
   "readme": "https://github.com/League-of-Foundry-Developers/fvtt-module-popout#readme",
   "url": "https://github.com/League-of-Foundry-Developers/fvtt-module-popout",
   "manifest": "https://raw.githubusercontent.com/Kazgul1987/fvtt-module-popout/master/module.json",
-  "download": "https://github.com/League-of-Foundry-Developers/fvtt-module-popout/archive/v2.21.zip",
+  "download": "https://github.com/Kazgul1987/fvtt-module-popout/download/releases/latest/fvtt-module-popout-enh-master.zip",
   "bugs": "https://github.com/League-of-Foundry-Developers/fvtt-module-popout/issues",
   "compatibility": {
     "minimum": "12",
