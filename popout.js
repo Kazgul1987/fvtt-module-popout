@@ -150,7 +150,7 @@ class PopoutModule {
     });
     game.settings.register("popout", "cloneDocumentEvents", {
       name: "Clone document event handlers",
-      hint: "Copy delegated document and body event handlers into popout windows. Enabled automatically for PF2e.",
+      hint: "Copy delegated document and body event handlers into popout windows. Always enabled for PF2e.",
       scope: "client",
       config: true,
       default: game.system.id === "pf2e",
@@ -1225,7 +1225,10 @@ class PopoutModule {
         // For v13, if no API available, let the event bubble normally
       });
 
-      if (game.settings.get("popout", "cloneDocumentEvents")) {
+      if (
+        game.settings.get("popout", "cloneDocumentEvents") ||
+        game.system.id === "pf2e"
+      ) {
         try {
           this.cloneDelegatedEvents(popout);
         } catch (err) {
