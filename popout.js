@@ -8,6 +8,11 @@ class PopoutModule {
     // Random id to prevent collision with other modules;
     // Use the new v12+ API if available, fallback to global for older versions
     this.ID = (foundry?.utils?.randomID || randomID)(24);
+    this.nativeListeners = {
+      document: new Map(),
+      body: new Map(),
+    };
+    this.mirroredNativeListeners = new Map();
   }
 
   log(msg, ...args) {
@@ -157,10 +162,106 @@ class PopoutModule {
       type: Boolean,
     });
 
+    const self = this;
+    const origAddEventListener = EventTarget.prototype.addEventListener;
+    const origRemoveEventListener = EventTarget.prototype.removeEventListener;
+
+    EventTarget.prototype.addEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = origAddEventListener.call(this, type, listener, options);
+      if (this === document || this === document.body) {
+        const targetName = this === document ? "document" : "body";
+        const store = self.nativeListeners[targetName];
+        if (!store.has(type)) store.set(type, []);
+        store.get(type).push({ listener, options });
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed) continue;
+          const docTarget =
+            targetName === "document" ? win.document : win.document.body;
+          if (!docTarget) continue;
+          origAddEventListener.call(docTarget, type, listener, options);
+          let mirror = self.mirroredNativeListeners.get(win) || {
+            document: [],
+            body: [],
+          };
+          mirror[targetName].push({ type, listener, options });
+          self.mirroredNativeListeners.set(win, mirror);
+        }
+      }
+      return result;
+    };
+
+    EventTarget.prototype.removeEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = origRemoveEventListener.call(
+        this,
+        type,
+        listener,
+        options,
+      );
+      if (this === document || this === document.body) {
+        const targetName = this === document ? "document" : "body";
+        const store = self.nativeListeners[targetName];
+        const arr = store.get(type);
+        if (arr) {
+          const capture =
+            typeof options === "boolean" ? options : options?.capture;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const item = arr[i];
+            const itemCapture =
+              typeof item.options === "boolean"
+                ? item.options
+                : item.options?.capture;
+            if (item.listener === listener && itemCapture === capture) {
+              arr.splice(i, 1);
+              break;
+            }
+          }
+          if (arr.length === 0) store.delete(type);
+        }
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed) continue;
+          const docTarget =
+            targetName === "document" ? win.document : win.document.body;
+          if (!docTarget) continue;
+          origRemoveEventListener.call(docTarget, type, listener, options);
+          const mirror = self.mirroredNativeListeners.get(win);
+          if (mirror) {
+            const list = mirror[targetName];
+            const capture =
+              typeof options === "boolean" ? options : options?.capture;
+            for (let i = list.length - 1; i >= 0; i--) {
+              const m = list[i];
+              const mCapture =
+                typeof m.options === "boolean" ? m.options : m.options?.capture;
+              if (
+                m.type === type &&
+                m.listener === listener &&
+                mCapture === capture
+              ) {
+                list.splice(i, 1);
+                break;
+              }
+            }
+          }
+        }
+      }
+      return result;
+    };
+    this._origAddEventListener = origAddEventListener;
+    this._origRemoveEventListener = origRemoveEventListener;
+
     // Mirror document-level jQuery events to popped out windows
     const origOn = jQuery.fn.on;
     const origOff = jQuery.fn.off;
-    const self = this;
 
     jQuery.fn.on = function (...args) {
       const target = this[0];
@@ -532,6 +633,28 @@ class PopoutModule {
     if (document.body && popout.document.body) {
       clone(document.body, popout.document.body);
     }
+  }
+
+  cloneNativeEventListeners(popout) {
+    const origAdd = this._origAddEventListener;
+    const mirror = { document: [], body: [] };
+    for (const targetName of ["document", "body"]) {
+      const store = this.nativeListeners[targetName];
+      const docTarget =
+        targetName === "document" ? popout.document : popout.document.body;
+      if (!store || !docTarget) continue;
+      for (const [type, handlers] of store.entries()) {
+        for (const data of handlers) {
+          origAdd.call(docTarget, type, data.listener, data.options);
+          mirror[targetName].push({
+            type,
+            listener: data.listener,
+            options: data.options,
+          });
+        }
+      }
+    }
+    this.mirroredNativeListeners.set(popout, mirror);
   }
 
   attachApplicationV2Events(app, clonedNode, popout) {
@@ -983,6 +1106,7 @@ class PopoutModule {
     });
 
     popout.addEventListener("unload", async (event) => {
+      this.mirroredNativeListeners.delete(popout);
       this.log("Unload event", event);
       const appId = app.appId || app.id;
       if (this.poppedOut.has(appId)) {
@@ -1235,6 +1359,8 @@ class PopoutModule {
           this.log("Failed to clone document events", err);
         }
       }
+
+      this.cloneNativeEventListeners(popout);
 
       popout.game = game;
 
