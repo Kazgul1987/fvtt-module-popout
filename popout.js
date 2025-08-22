@@ -11,6 +11,7 @@ class PopoutModule {
     this.nativeListeners = {
       document: new Map(),
       body: new Map(),
+      window: new Map(),
     };
     this.mirroredNativeListeners = new Map();
   }
@@ -172,8 +173,13 @@ class PopoutModule {
       options,
     ) {
       const result = origAddEventListener.call(this, type, listener, options);
-      if (this === document || this === document.body) {
-        const targetName = this === document ? "document" : "body";
+      if (this === document || this === document.body || this === window) {
+        const targetName =
+          this === document
+            ? "document"
+            : this === document.body
+              ? "body"
+              : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
         store.get(type).push({ listener, options });
@@ -181,12 +187,17 @@ class PopoutModule {
           const win = val.window;
           if (!win || win.closed) continue;
           const docTarget =
-            targetName === "document" ? win.document : win.document.body;
+            targetName === "document"
+              ? win.document
+              : targetName === "body"
+                ? win.document.body
+                : win;
           if (!docTarget) continue;
           origAddEventListener.call(docTarget, type, listener, options);
           let mirror = self.mirroredNativeListeners.get(win) || {
             document: [],
             body: [],
+            window: [],
           };
           mirror[targetName].push({ type, listener, options });
           self.mirroredNativeListeners.set(win, mirror);
@@ -206,8 +217,13 @@ class PopoutModule {
         listener,
         options,
       );
-      if (this === document || this === document.body) {
-        const targetName = this === document ? "document" : "body";
+      if (this === document || this === document.body || this === window) {
+        const targetName =
+          this === document
+            ? "document"
+            : this === document.body
+              ? "body"
+              : "window";
         const store = self.nativeListeners[targetName];
         const arr = store.get(type);
         if (arr) {
@@ -230,7 +246,11 @@ class PopoutModule {
           const win = val.window;
           if (!win || win.closed) continue;
           const docTarget =
-            targetName === "document" ? win.document : win.document.body;
+            targetName === "document"
+              ? win.document
+              : targetName === "body"
+                ? win.document.body
+                : win;
           if (!docTarget) continue;
           origRemoveEventListener.call(docTarget, type, listener, options);
           const mirror = self.mirroredNativeListeners.get(win);
@@ -266,12 +286,20 @@ class PopoutModule {
     jQuery.fn.on = function (...args) {
       const target = this[0];
       const result = origOn.apply(this, args);
-      if (target === document || target === document.body) {
+      if (
+        target === document ||
+        target === document.body ||
+        target === window
+      ) {
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
           const docTarget =
-            target === document ? win.document : win.document.body;
+            target === document
+              ? win.document
+              : target === document.body
+                ? win.document.body
+                : win;
           origOn.apply(jQuery(docTarget), args);
         }
       }
@@ -281,17 +309,27 @@ class PopoutModule {
     jQuery.fn.off = function (...args) {
       const target = this[0];
       const result = origOff.apply(this, args);
-      if (target === document || target === document.body) {
+      if (
+        target === document ||
+        target === document.body ||
+        target === window
+      ) {
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
           const docTarget =
-            target === document ? win.document : win.document.body;
+            target === document
+              ? win.document
+              : target === document.body
+                ? win.document.body
+                : win;
           origOff.apply(jQuery(docTarget), args);
         }
       }
       return result;
     };
+
+    this._seedExistingNativeListeners();
 
     // We replace the games window registry with a proxy object so we can intercept
     // every new application window creation event.
@@ -637,11 +675,15 @@ class PopoutModule {
 
   cloneNativeEventListeners(popout) {
     const origAdd = this._origAddEventListener;
-    const mirror = { document: [], body: [] };
-    for (const targetName of ["document", "body"]) {
+    const mirror = { document: [], body: [], window: [] };
+    for (const targetName of ["document", "body", "window"]) {
       const store = this.nativeListeners[targetName];
       const docTarget =
-        targetName === "document" ? popout.document : popout.document.body;
+        targetName === "document"
+          ? popout.document
+          : targetName === "body"
+            ? popout.document.body
+            : popout;
       if (!store || !docTarget) continue;
       for (const [type, handlers] of store.entries()) {
         for (const data of handlers) {
@@ -655,6 +697,44 @@ class PopoutModule {
       }
     }
     this.mirroredNativeListeners.set(popout, mirror);
+  }
+
+  _seedExistingNativeListeners() {
+    const getter =
+      typeof getEventListeners === "function" ? getEventListeners : null;
+    for (const { target, name } of [
+      { target: document, name: "document" },
+      { target: document.body, name: "body" },
+      { target: window, name: "window" },
+    ]) {
+      if (!target) continue;
+      const store = this.nativeListeners[name];
+      if (!store) continue;
+      let success = false;
+      if (getter) {
+        try {
+          const listeners = getter(target);
+          for (const [type, arr] of Object.entries(listeners)) {
+            for (const l of arr) {
+              const options = l.options ?? l.useCapture ?? l.capture ?? false;
+              if (!store.has(type)) store.set(type, []);
+              store.get(type).push({ listener: l.listener, options });
+            }
+          }
+          success = true;
+        } catch {
+          success = false;
+        }
+      }
+      if (success) continue;
+      for (const key in target) {
+        if (key.startsWith("on") && typeof target[key] === "function") {
+          const type = key.slice(2);
+          if (!store.has(type)) store.set(type, []);
+          store.get(type).push({ listener: target[key], options: false });
+        }
+      }
+    }
   }
 
   attachApplicationV2Events(app, clonedNode, popout) {
