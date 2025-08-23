@@ -1456,6 +1456,8 @@ class PopoutModule {
       // Always mirror native listeners from the main document
       this.cloneNativeEventListeners(popout);
 
+      globalThis.InlineRollLinks?.activatePF2eListeners();
+
       popout.game = game;
 
       // Only try to setup tooltip manager if it exists
