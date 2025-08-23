@@ -651,18 +651,27 @@ class PopoutModule {
       if (!events) return;
       for (const [type, handlers] of Object.entries(events)) {
         for (const handler of handlers) {
-          if (!handler.selector) continue;
           const namespace = handler.namespace ? `.${handler.namespace}` : "";
           const eventName = `${type}${namespace}`;
-          if (handler.data !== undefined) {
-            jq(target).on(
-              eventName,
-              handler.selector,
-              handler.data,
-              handler.handler,
-            );
+          if (handler.selector) {
+            if (handler.data !== undefined) {
+              jq(target).on(
+                eventName,
+                handler.selector,
+                handler.data,
+                handler.handler,
+              );
+            } else {
+              jq(target).on(eventName, handler.selector, handler.handler);
+            }
           } else {
-            jq(target).on(eventName, handler.selector, handler.handler);
+            // PF2e skill checks rely on direct document handlers,
+            // so we need to clone non-delegated handlers as well
+            if (handler.data !== undefined) {
+              jq(target).on(eventName, handler.data, handler.handler);
+            } else {
+              jq(target).on(eventName, handler.handler);
+            }
           }
         }
       }
