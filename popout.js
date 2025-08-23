@@ -1566,7 +1566,11 @@ class PopoutModule {
 Hooks.once("ready", () => {
   if (game.system.id === "pf2e") {
     Hooks.on("renderActorSheetPF2e", (sheet, html) => {
-      if (typeof sheet.activateListeners === "function") {
+      if (
+        typeof sheet.activateListeners === "function" &&
+        !sheet._popoutListenersPrimed
+      ) {
+        sheet._popoutListenersPrimed = true;
         sheet.activateListeners(html);
       }
     });
