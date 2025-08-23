@@ -539,7 +539,10 @@ class PopoutModule {
         )}"></i>${buttonText}</a>`,
       );
 
-      link.on("click", () => this.onPopoutClicked(app));
+      link.on("click", () => {
+        this.onPopoutClicked(app);
+        globalThis.InlineRollLinks?.activatePF2eListeners();
+      });
 
       // Handle both ApplicationV1 and ApplicationV2
 
