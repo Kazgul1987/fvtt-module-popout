@@ -1561,6 +1561,7 @@ class PopoutModule {
 Hooks.once("ready", () => {
   if (game.system.id === "pf2e") {
     globalThis.InlineRollLinks?.activatePF2eListeners();
+    console.log("Inline Roll Links listeners activated");
   }
 
   PopoutModule.singleton = new PopoutModule();
