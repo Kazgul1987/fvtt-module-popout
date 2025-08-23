@@ -1438,17 +1438,22 @@ class PopoutModule {
         // For v13, if no API available, let the event bubble normally
       });
 
+      // Always refresh event listeners when the window loads so they
+      // are re-mirrored on subsequent openings.
+      this.mirroredNativeListeners.delete(popout);
       if (
         game.settings.get("popout", "cloneDocumentEvents") ||
         game.system.id === "pf2e"
       ) {
         try {
+          // Clone delegated document events afresh for the new window
           this.cloneDelegatedEvents(popout);
         } catch (err) {
           this.log("Failed to clone document events", err);
         }
       }
 
+      // Always mirror native listeners from the main document
       this.cloneNativeEventListeners(popout);
 
       popout.game = game;
