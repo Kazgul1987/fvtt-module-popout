@@ -1554,6 +1554,13 @@ class PopoutModule {
 }
 
 Hooks.on("ready", () => {
+  if (
+    game.system.id === "pf2e" &&
+    typeof InlineRollLinks?.activatePF2eListeners === "function"
+  ) {
+    InlineRollLinks.activatePF2eListeners();
+  }
+
   PopoutModule.singleton = new PopoutModule();
   PopoutModule.singleton.init();
 
