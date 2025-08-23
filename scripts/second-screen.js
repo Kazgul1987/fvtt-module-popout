@@ -1,8 +1,9 @@
-
 /**
  * Utilities for PF2e second-screen interactions.
  * Adjusted for PF2e v13 DOM structure.
  */
+
+"use strict";
 
 /**
  * Trigger a PF2e skill roll.
@@ -37,7 +38,6 @@ if (typeof window !== "undefined") {
   window.triggerSkillRoll = triggerSkillRoll;
   window.triggerRollCheck = triggerRollCheck;
 }
-"use strict";
 
 async function openSecondScreen(sheet) {
   const popout = await sheet.render(true, { popOut: true });
