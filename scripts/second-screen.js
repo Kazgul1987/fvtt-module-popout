@@ -148,6 +148,20 @@ async function openSecondScreen(sheet) {
     isPatched = true;
   }
 
+  const cleanup = () => {
+    for (const pair of newPairs) {
+      const idx = pairs.indexOf(pair);
+      if (idx !== -1) pairs.splice(idx, 1);
+    }
+    if (pairs.length === 0) {
+      EventTarget.prototype.addEventListener = origAdd;
+      EventTarget.prototype.removeEventListener = origRemove;
+      isPatched = false;
+    }
+  };
+
+  popout.addEventListener("unload", cleanup, { once: true });
+
   return popout;
 }
 
