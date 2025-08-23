@@ -1553,14 +1553,16 @@ class PopoutModule {
   }
 }
 
-Hooks.on("ready", () => {
-  if (
-    game.system.id === "pf2e" &&
-    typeof InlineRollLinks?.activatePF2eListeners === "function"
-  ) {
+Hooks.once("setup", async () => {
+  if (game.system.id === "pf2e") {
+    const { InlineRollLinks } = await import(
+      "/systems/pf2e/scripts/ui/inline-roll-links.js"
+    );
     InlineRollLinks.activatePF2eListeners();
   }
+});
 
+Hooks.on("ready", () => {
   PopoutModule.singleton = new PopoutModule();
   PopoutModule.singleton.init();
 
