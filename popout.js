@@ -1565,6 +1565,12 @@ class PopoutModule {
 
 Hooks.once("ready", () => {
   if (game.system.id === "pf2e") {
+    Hooks.on("renderActorSheetPF2e", (sheet, html) => {
+      if (typeof sheet.activateListeners === "function") {
+        sheet.activateListeners(html);
+      }
+    });
+
     globalThis.InlineRollLinks?.activatePF2eListeners();
     console.log("Inline Roll Links listeners activated");
   }
