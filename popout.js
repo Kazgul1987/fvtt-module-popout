@@ -1553,11 +1553,11 @@ class PopoutModule {
   }
 }
 
-Hooks.once("setup", () => {
-  if (game.system.id === "pf2e") InlineRollLinks.activatePF2eListeners();
-});
+Hooks.once("ready", () => {
+  if (game.system.id === "pf2e") {
+    globalThis.InlineRollLinks?.activatePF2eListeners();
+  }
 
-Hooks.on("ready", () => {
   PopoutModule.singleton = new PopoutModule();
   PopoutModule.singleton.init();
 
