@@ -1575,13 +1575,13 @@ class PopoutModule {
 }
 
 Hooks.once("ready", () => {
+  PopoutModule.singleton = new PopoutModule();
+  PopoutModule.singleton.init();
+
   if (game.system.id === "pf2e") {
     globalThis.InlineRollLinks?.activatePF2eListeners();
     console.log("Inline Roll Links listeners activated");
   }
-
-  PopoutModule.singleton = new PopoutModule();
-  PopoutModule.singleton.init();
 
   // Add ApplicationV2 support for v13 using instance interception
   if (foundry?.applications?.instances) {
