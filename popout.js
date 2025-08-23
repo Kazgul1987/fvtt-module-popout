@@ -1457,11 +1457,20 @@ class PopoutModule {
       this.cloneNativeEventListeners(popout);
 
       // Re-activate PF2e inline roll links within the popout window
-      popout.InlineRollLinks = window.InlineRollLinks;
-      if (!popout.InlineRollLinks) {
-        this.log("InlineRollLinks not found on main window");
+      if (game.system.id === "pf2e") {
+        try {
+          const response = await popout.fetch(
+            "systems/pf2e/module/inline-roll-links.js",
+          );
+          if (!response.ok)
+            throw new Error(`${response.status} ${response.statusText}`);
+          const script = await response.text();
+          popout.eval(script);
+          popout.InlineRollLinks?.activatePF2eListeners();
+        } catch (err) {
+          this.log("Failed to load inline-roll-links.js", err);
+        }
       }
-      popout.InlineRollLinks?.activatePF2eListeners();
 
       popout.game = game;
 
