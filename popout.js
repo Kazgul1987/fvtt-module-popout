@@ -1553,14 +1553,8 @@ class PopoutModule {
   }
 }
 
-Hooks.once("setup", async () => {
-  if (game.system.id === "pf2e") {
-    const path = foundry.utils.getRoute(
-      "systems/pf2e/scripts/ui/inline-roll-links.mjs",
-    );
-    const { InlineRollLinks } = await import(path);
-    InlineRollLinks.activatePF2eListeners();
-  }
+Hooks.once("setup", () => {
+  if (game.system.id === "pf2e") InlineRollLinks.activatePF2eListeners();
 });
 
 Hooks.on("ready", () => {
