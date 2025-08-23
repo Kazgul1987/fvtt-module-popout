@@ -1457,6 +1457,10 @@ class PopoutModule {
       this.cloneNativeEventListeners(popout);
 
       // Re-activate PF2e inline roll links within the popout window
+      popout.InlineRollLinks = window.InlineRollLinks;
+      if (!popout.InlineRollLinks) {
+        this.log("InlineRollLinks not found on main window");
+      }
       popout.InlineRollLinks?.activatePF2eListeners();
 
       popout.game = game;
