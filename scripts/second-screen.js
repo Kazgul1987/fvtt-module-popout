@@ -39,6 +39,11 @@ if (typeof window !== "undefined") {
 }
 "use strict";
 
+const origAdd = EventTarget.prototype.addEventListener;
+const origRemove = EventTarget.prototype.removeEventListener;
+const pairs = [];
+let isPatched = false;
+
 async function openSecondScreen(sheet) {
   const popout = await sheet.render(true, { popOut: true });
 
@@ -77,12 +82,11 @@ async function openSecondScreen(sheet) {
     cloneDelegated(document.body, popout.document.body);
   }
 
-  const origAdd = EventTarget.prototype.addEventListener;
-  const origRemove = EventTarget.prototype.removeEventListener;
-  const pairs = [
+  const newPairs = [
     [window.document, popout.document],
     [window.document.body, popout.document.body],
   ];
+  pairs.push(...newPairs);
 
   const seed = (source, target) => {
     if (!source || !target) return;
@@ -110,31 +114,39 @@ async function openSecondScreen(sheet) {
     }
   };
 
-  for (const [src, tgt] of pairs) seed(src, tgt);
+  for (const [src, tgt] of newPairs) seed(src, tgt);
 
-  EventTarget.prototype.addEventListener = function (type, listener, options) {
-    const result = origAdd.call(this, type, listener, options);
-    for (const [src, tgt] of pairs) {
-      if (this === src && tgt) {
-        origAdd.call(tgt, type, listener, options);
+  if (!isPatched) {
+    EventTarget.prototype.addEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = origAdd.call(this, type, listener, options);
+      for (const [src, tgt] of pairs) {
+        if (this === src && tgt) {
+          origAdd.call(tgt, type, listener, options);
+        }
       }
-    }
-    return result;
-  };
+      return result;
+    };
 
-  EventTarget.prototype.removeEventListener = function (
-    type,
-    listener,
-    options,
-  ) {
-    const result = origRemove.call(this, type, listener, options);
-    for (const [src, tgt] of pairs) {
-      if (this === src && tgt) {
-        origRemove.call(tgt, type, listener, options);
+    EventTarget.prototype.removeEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = origRemove.call(this, type, listener, options);
+      for (const [src, tgt] of pairs) {
+        if (this === src && tgt) {
+          origRemove.call(tgt, type, listener, options);
+        }
       }
-    }
-    return result;
-  };
+      return result;
+    };
+
+    isPatched = true;
+  }
 
   return popout;
 }
