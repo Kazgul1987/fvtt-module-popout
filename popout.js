@@ -1564,20 +1564,18 @@ class PopoutModule {
 }
 
 Hooks.once("ready", () => {
-  if (game.system.id === "pf2e") {
-    Hooks.on("renderActorSheetPF2e", (sheet, html) => {
-      if (
-        typeof sheet.activateListeners === "function" &&
-        !sheet._popoutListenersPrimed
-      ) {
-        sheet._popoutListenersPrimed = true;
-        sheet.activateListeners(html);
-      }
-    });
+  Hooks.on("renderActorSheetPF2e", (sheet, html) => {
+    if (
+      typeof sheet.activateListeners === "function" &&
+      !sheet._popoutListenersPrimed
+    ) {
+      sheet._popoutListenersPrimed = true;
+      sheet.activateListeners(html);
+    }
+  });
 
-    globalThis.InlineRollLinks?.activatePF2eListeners();
-    console.log("Inline Roll Links listeners activated");
-  }
+  globalThis.InlineRollLinks?.activatePF2eListeners();
+  console.log("Inline Roll Links listeners activated");
 
   PopoutModule.singleton = new PopoutModule();
   PopoutModule.singleton.init();
