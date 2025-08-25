@@ -1262,6 +1262,7 @@ class PopoutModule {
             child.close();
           }
         }
+        delete app._popoutListenersBound;
         this.poppedOut.delete(appId);
 
         // Force a re-render or close it
@@ -1401,6 +1402,15 @@ class PopoutModule {
             `; // Fullscreen
       app.setPosition({ width: "100%", height: "100%", top: 0, left: 0 });
       app._minimized = null;
+
+      // Re-bind application listeners to the new DOM, but only once per popout
+      if (
+        typeof app.activateListeners === "function" &&
+        !app._popoutListenersBound
+      ) {
+        app.activateListeners(jQuery(popout.document));
+        app._popoutListenersBound = true;
+      }
 
       // Disable touch zoom
       popout.document.addEventListener("touchmove", (ev) => {
