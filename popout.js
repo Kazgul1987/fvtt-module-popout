@@ -14,6 +14,12 @@ class PopoutModule {
       window: new Map(),
     };
     this.mirroredNativeListeners = new Map();
+    this.jqListeners = {
+      document: [],
+      body: [],
+      documentElement: [],
+      window: [],
+    };
   }
 
   log(msg, ...args) {
@@ -289,8 +295,10 @@ class PopoutModule {
       if (
         target === document ||
         target === document.body ||
+        target === document.documentElement ||
         target === window
       ) {
+        self._storeJqEvent(target, args);
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -299,7 +307,9 @@ class PopoutModule {
               ? win.document
               : target === document.body
                 ? win.document.body
-                : win;
+                : target === document.documentElement
+                  ? win.document.documentElement
+                  : win;
           origOn.apply(jQuery(docTarget), args);
         }
       }
@@ -312,8 +322,10 @@ class PopoutModule {
       if (
         target === document ||
         target === document.body ||
+        target === document.documentElement ||
         target === window
       ) {
+        self._removeJqEvent(target, args);
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -322,7 +334,9 @@ class PopoutModule {
               ? win.document
               : target === document.body
                 ? win.document.body
-                : win;
+                : target === document.documentElement
+                  ? win.document.documentElement
+                  : win;
           origOff.apply(jQuery(docTarget), args);
         }
       }
@@ -646,40 +660,21 @@ class PopoutModule {
 
   cloneDelegatedEvents(popout) {
     const jq = popout.jQuery || window.jQuery;
-    const clone = (source, target) => {
-      const events = window.jQuery._data(source, "events");
+    const clone = (name, target) => {
+      const events = this.jqListeners[name];
       if (!events) return;
-      for (const [type, handlers] of Object.entries(events)) {
-        for (const handler of handlers) {
-          const namespace = handler.namespace ? `.${handler.namespace}` : "";
-          const eventName = `${type}${namespace}`;
-          if (handler.selector) {
-            if (handler.data !== undefined) {
-              jq(target).on(
-                eventName,
-                handler.selector,
-                handler.data,
-                handler.handler,
-              );
-            } else {
-              jq(target).on(eventName, handler.selector, handler.handler);
-            }
-          } else {
-            // PF2e skill checks rely on direct document handlers,
-            // so we need to clone non-delegated handlers as well
-            if (handler.data !== undefined) {
-              jq(target).on(eventName, handler.data, handler.handler);
-            } else {
-              jq(target).on(eventName, handler.handler);
-            }
-          }
-        }
+      for (const args of events) {
+        jq(target).on(...args);
       }
     };
-    clone(document, popout.document);
-    if (document.body && popout.document.body) {
-      clone(document.body, popout.document.body);
+    clone("document", popout.document);
+    if (document.documentElement && popout.document.documentElement) {
+      clone("documentElement", popout.document.documentElement);
     }
+    if (document.body && popout.document.body) {
+      clone("body", popout.document.body);
+    }
+    clone("window", popout);
   }
 
   cloneNativeEventListeners(popout) {
@@ -742,6 +737,33 @@ class PopoutModule {
           if (!store.has(type)) store.set(type, []);
           store.get(type).push({ listener: target[key], options: false });
         }
+      }
+    }
+  }
+
+  _getJqTargetName(target) {
+    if (target === document) return "document";
+    if (target === document.body) return "body";
+    if (target === document.documentElement) return "documentElement";
+    if (target === window) return "window";
+    return null;
+    }
+
+  _storeJqEvent(target, args) {
+    const name = this._getJqTargetName(target);
+    if (!name) return;
+    this.jqListeners[name].push(args);
+  }
+
+  _removeJqEvent(target, args) {
+    const name = this._getJqTargetName(target);
+    if (!name) return;
+    const list = this.jqListeners[name];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const a = list[i];
+      if (a.length === args.length && a.every((v, idx) => v === args[idx])) {
+        list.splice(i, 1);
+        break;
       }
     }
   }
