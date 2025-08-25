@@ -471,6 +471,7 @@ class PopoutModule {
   }
 
   async addPopout(app) {
+    const self = this;
     if (
       app._disable_popout_module !== undefined &&
       app._disable_popout_module
@@ -1127,6 +1128,123 @@ class PopoutModule {
       return;
     }
 
+    const popoutOrigAdd = popout.EventTarget.prototype.addEventListener;
+    const popoutOrigRemove = popout.EventTarget.prototype.removeEventListener;
+
+    popout.EventTarget.prototype.addEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = popoutOrigAdd.call(this, type, listener, options);
+      if (
+        this === popout.document ||
+        this === popout.document.body ||
+        this === popout
+      ) {
+        const targetName =
+          this === popout.document
+            ? "document"
+            : this === popout.document.body
+              ? "body"
+              : "window";
+        const store = self.nativeListeners[targetName];
+        if (!store.has(type)) store.set(type, []);
+        store.get(type).push({ listener, options });
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed || win === popout) continue;
+          const mirror = self.mirroredNativeListeners.get(win);
+          if (mirror) {
+            for (const [tn, list] of Object.entries(mirror)) {
+              const docTarget =
+                tn === "document"
+                  ? win.document
+                  : tn === "body"
+                    ? win.document.body
+                    : win;
+              for (const m of list) {
+                self._origRemoveEventListener.call(
+                  docTarget,
+                  m.type,
+                  m.listener,
+                  m.options,
+                );
+              }
+            }
+          }
+          self.cloneNativeEventListeners(win);
+        }
+      }
+      return result;
+    };
+
+    popout.EventTarget.prototype.removeEventListener = function (
+      type,
+      listener,
+      options,
+    ) {
+      const result = popoutOrigRemove.call(this, type, listener, options);
+      if (
+        this === popout.document ||
+        this === popout.document.body ||
+        this === popout
+      ) {
+        const targetName =
+          this === popout.document
+            ? "document"
+            : this === popout.document.body
+              ? "body"
+              : "window";
+        const store = self.nativeListeners[targetName];
+        const arr = store.get(type);
+        if (arr) {
+          const capture =
+            typeof options === "boolean" ? options : options?.capture;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const item = arr[i];
+            const itemCapture =
+              typeof item.options === "boolean"
+                ? item.options
+                : item.options?.capture;
+            if (item.listener === listener && itemCapture === capture) {
+              arr.splice(i, 1);
+              break;
+            }
+          }
+          if (arr.length === 0) store.delete(type);
+        }
+        for (const val of self.poppedOut.values()) {
+          const win = val.window;
+          if (!win || win.closed || win === popout) continue;
+          const mirror = self.mirroredNativeListeners.get(win);
+          if (mirror) {
+            for (const [tn, list] of Object.entries(mirror)) {
+              const docTarget =
+                tn === "document"
+                  ? win.document
+                  : tn === "body"
+                    ? win.document.body
+                    : win;
+              for (const m of list) {
+                self._origRemoveEventListener.call(
+                  docTarget,
+                  m.type,
+                  m.listener,
+                  m.options,
+                );
+              }
+            }
+          }
+          self.cloneNativeEventListeners(win);
+        }
+      }
+      return result;
+    };
+
+    popout._origAddEventListener = popoutOrigAdd;
+    popout._origRemoveEventListener = popoutOrigRemove;
+
     // This is fiddly and probably not that robust to other modules.
     // But does provide behavior closer to the vanilla fvtt iterations.
     // Try multiple selectors for different application types
@@ -1217,6 +1335,12 @@ class PopoutModule {
     });
 
     popout.addEventListener("unload", async (event) => {
+      popout.EventTarget.prototype.addEventListener =
+        popout._origAddEventListener;
+      popout.EventTarget.prototype.removeEventListener =
+        popout._origRemoveEventListener;
+      delete popout._origAddEventListener;
+      delete popout._origRemoveEventListener;
       this.mirroredNativeListeners.delete(popout);
       this.log("Unload event", event);
       const appId = app.appId || app.id;
