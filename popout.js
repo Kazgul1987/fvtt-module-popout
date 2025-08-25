@@ -1409,7 +1409,6 @@ class PopoutModule {
             child.close();
           }
         }
-        delete app._popoutListenersBound;
         self.poppedOut.delete(appId);
 
         // Force a re-render or close it
@@ -1523,17 +1522,21 @@ class PopoutModule {
           const adoptedNode = targetDoc.adoptNode(state.node);
           body.style.overflow = "auto";
           body.append(adoptedNode);
-          // Update state to reference the adopted node
+          // Update state and application references to the adopted node
           state.node = adoptedNode;
+          app._element = state.node;
+          app.element = $(state.node);
         } catch (error) {
           self.log("Error adopting ApplicationV2 node:", error);
           throw error;
         }
       } else {
         // ApplicationV1 - use the original adoption method
-        const adoptedNode = targetDoc.adoptNode(state.node);
+        targetDoc.adoptNode(state.node);
         body.style.overflow = "auto";
         body.append(state.node);
+        app._element = state.node;
+        app.element = $(state.node);
       }
 
       state.node.style.cssText = `
@@ -1550,13 +1553,9 @@ class PopoutModule {
       app.setPosition({ width: "100%", height: "100%", top: 0, left: 0 });
       app._minimized = null;
 
-      // Re-bind application listeners to the new DOM, but only once per popout
-      if (
-        typeof app.activateListeners === "function" &&
-        !app._popoutListenersBound
-      ) {
-        app.activateListeners(jQuery(popout.document));
-        app._popoutListenersBound = true;
+      // Re-bind application listeners to the new DOM
+      if (typeof app.activateListeners === "function") {
+        app.activateListeners($(state.node));
       }
 
       // Disable touch zoom
