@@ -118,6 +118,16 @@ Hooks.callAll("PopOut:dialog", app, parent);
 Hooks.callAll("PopOut:close", app, node);
 ```
 
+# Testing
+
+End-to-end tests use [TestCafe](https://testcafe.io). Start a Foundry VTT server on `http://localhost:30000` with the PopOut! module enabled, then run:
+
+```sh
+npx testcafe "chromium --no-sandbox" tests
+```
+
+One scenario opens an actor sheet, pops it out, and clicks a `.rollable` skill button. The test fixture enables the `cloneDocumentEvents` setting so the roll dialog or resulting chat message appears correctly.
+
 # License
 
 This Foundry VTT module, written by @KaKaRoTo.
