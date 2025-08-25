@@ -539,10 +539,7 @@ class PopoutModule {
         )}"></i>${buttonText}</a>`,
       );
 
-      link.on("click", () => {
-        this.onPopoutClicked(app);
-        globalThis.InlineRollLinks?.activatePF2eListeners();
-      });
+      link.on("click", () => this.onPopoutClicked(app));
 
       // Handle both ApplicationV1 and ApplicationV2
 
@@ -1459,8 +1456,6 @@ class PopoutModule {
       // Always mirror native listeners from the main document
       this.cloneNativeEventListeners(popout);
 
-      globalThis.InlineRollLinks?.activatePF2eListeners();
-
       popout.game = game;
 
       // Only try to setup tooltip manager if it exists
@@ -1564,18 +1559,10 @@ class PopoutModule {
 }
 
 Hooks.once("ready", () => {
-  Hooks.on("renderActorSheetPF2e", (sheet, html) => {
-    if (
-      typeof sheet.activateListeners === "function" &&
-      !sheet._popoutListenersPrimed
-    ) {
-      sheet._popoutListenersPrimed = true;
-      sheet.activateListeners(html);
-    }
-  });
-
-  globalThis.InlineRollLinks?.activatePF2eListeners();
-  console.log("Inline Roll Links listeners activated");
+  if (game.system.id === "pf2e") {
+    globalThis.InlineRollLinks?.activatePF2eListeners();
+    console.log("Inline Roll Links listeners activated");
+  }
 
   PopoutModule.singleton = new PopoutModule();
   PopoutModule.singleton.init();
