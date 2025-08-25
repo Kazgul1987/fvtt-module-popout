@@ -48,8 +48,6 @@ test("PF2e skill check dialog rolls from a popped-out sheet", async (t) => {
   await t.switchToWindow(mainWindow);
 });
 
-
-test("rollable skill button rolls from a popped-out sheet", async (t) => {
 test("PF2e skill check after re-render in pop-out still triggers a roll", async (t) => {
   // Open the first actor in the directory
   const firstActor = Selector("#actors .directory-list .directory-item").nth(0);
@@ -63,11 +61,10 @@ test("PF2e skill check after re-render in pop-out still triggers a roll", async 
   const mainWindow = await t.getCurrentWindow();
   await t.switchToWindow((w) => w.url.includes("popout"));
 
-
   // Click the first rollable element
   const rollable = Selector(".rollable").filterVisible().nth(0);
   const messageSelector = Selector("#chat-log .message");
-  const initialCount = await messageSelector.count;
+  let initialCount = await messageSelector.count;
   await t.click(rollable);
 
   // A dialog or new chat message should appear
@@ -86,8 +83,7 @@ test("PF2e skill check after re-render in pop-out still triggers a roll", async 
   await t.click(perceptionSkill);
 
   // Submit the skill-check dialog
-  const messageSelector = Selector("#chat-log .message");
-  const initialCount = await messageSelector.count;
+  initialCount = await messageSelector.count;
   const rollButton = Selector(
     '.dialog button[type="submit"], .dialog button.roll',
   );
