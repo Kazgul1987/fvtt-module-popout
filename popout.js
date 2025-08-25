@@ -748,7 +748,7 @@ class PopoutModule {
     if (target === document.documentElement) return "documentElement";
     if (target === window) return "window";
     return null;
-    }
+  }
 
   _storeJqEvent(target, args) {
     const name = this._getJqTargetName(target);
@@ -1058,6 +1058,7 @@ class PopoutModule {
   }
 
   onPopoutClicked(app) {
+    const self = this;
     // Check if popout in Electron window
     if (navigator.userAgent.toLowerCase().indexOf(" electron/") !== -1) {
       ui.notifications.warn(game.i18n.localize("POPOUT.electronWarning"));
@@ -1326,9 +1327,9 @@ class PopoutModule {
     Hooks.callAll("PopOut:loading", app, popout);
 
     window.addEventListener("unload", async (event) => {
-      this.log("Unload event", event);
+      self.log("Unload event", event);
       const appId = app.appId || app.id;
-      if (this.poppedOut.has(appId)) {
+      if (self.poppedOut.has(appId)) {
         await popout.close();
       }
       event.returnValue = true;
@@ -1341,12 +1342,12 @@ class PopoutModule {
         popout._origRemoveEventListener;
       delete popout._origAddEventListener;
       delete popout._origRemoveEventListener;
-      this.mirroredNativeListeners.delete(popout);
-      this.log("Unload event", event);
+      self.mirroredNativeListeners.delete(popout);
+      self.log("Unload event", event);
       const appId = app.appId || app.id;
-      if (this.poppedOut.has(appId)) {
-        const poppedOut = this.poppedOut.get(appId);
-        this.log("Closing popout", app.title);
+      if (self.poppedOut.has(appId)) {
+        const poppedOut = self.poppedOut.get(appId);
+        self.log("Closing popout", app.title);
         app.position = poppedOut.position; // Set the original position.
         app._minimized = poppedOut.minimized;
         app.bringToTop = poppedOut.bringToTop;
@@ -1366,7 +1367,7 @@ class PopoutModule {
           if (header) {
             for (const child of [...header.children]) {
               // Remove popin button so we can re-add it properly later
-              const popinButtonId = this.appToID(app);
+              const popinButtonId = self.appToID(app);
               if (child.id !== popinButtonId) {
                 poppedOut.header.appendChild(child);
               }
@@ -1409,13 +1410,13 @@ class PopoutModule {
           }
         }
         delete app._popoutListenersBound;
-        this.poppedOut.delete(appId);
+        self.poppedOut.delete(appId);
 
         // Force a re-render or close it
         if (popout._popout_dont_close) {
           Hooks.callAll("PopOut:popin", app);
           await app.render(true);
-          this.addPopout(app);
+          self.addPopout(app);
         } else {
           Hooks.callAll("PopOut:close", app, node);
           await app.close();
@@ -1436,7 +1437,7 @@ class PopoutModule {
       if (!a || a.href === "javascript:void(0)") {
         return;
       }
-      this.log("opening url", event, a);
+      self.log("opening url", event, a);
       event.preventDefault();
       // NOTE(posnet: 2020-07-26):
       // Why would we want to use ownerDocument.defaultView?
@@ -1525,7 +1526,7 @@ class PopoutModule {
           // Update state to reference the adopted node
           state.node = adoptedNode;
         } catch (error) {
-          this.log("Error adopting ApplicationV2 node:", error);
+          self.log("Error adopting ApplicationV2 node:", error);
           throw error;
         }
       } else {
@@ -1596,21 +1597,21 @@ class PopoutModule {
 
       // Always refresh event listeners when the window loads so they
       // are re-mirrored on subsequent openings.
-      this.mirroredNativeListeners.delete(popout);
+      self.mirroredNativeListeners.delete(popout);
       if (
         game.settings.get("popout", "cloneDocumentEvents") ||
         game.system.id === "pf2e"
       ) {
         try {
           // Clone delegated document events afresh for the new window
-          this.cloneDelegatedEvents(popout);
+          self.cloneDelegatedEvents(popout);
         } catch (err) {
-          this.log("Failed to clone document events", err);
+          self.log("Failed to clone document events", err);
         }
       }
 
       // Always mirror native listeners from the main document
-      this.cloneNativeEventListeners(popout);
+      self.cloneNativeEventListeners(popout);
 
       popout.game = game;
 
@@ -1628,11 +1629,11 @@ class PopoutModule {
 
     const oldBringToTop = app.bringToTop.bind(app);
     app.bringToTop = (...args) => {
-      this.log("Intercepted popout bringToTop", app);
+      self.log("Intercepted popout bringToTop", app);
       popout.focus();
       const result = oldBringToTop.apply(app, args);
       // In a popout we always want the base sheet to be at the back.
-      const appElement = this.getAppElement(app);
+      const appElement = self.getAppElement(app);
       if (appElement) {
         appElement.style.zIndex = 0;
       }
@@ -1641,13 +1642,13 @@ class PopoutModule {
 
     const oldRender = app.render.bind(app);
     app.render = (...args) => {
-      this.log("Intercepted popout render", app);
+      self.log("Intercepted popout render", app);
       return oldRender.apply(app, args);
     };
 
     const oldClose = app.close.bind(app);
     app.close = (...args) => {
-      this.log("Intercepted popout close.", app);
+      self.log("Intercepted popout close.", app);
       // Prevent closing of popped out windows with ESC in main page
 
       if (game.keyboard.isDown !== undefined) {
@@ -1662,7 +1663,7 @@ class PopoutModule {
 
     const oldMinimize = app.minimize.bind(app);
     app.minimize = (...args) => {
-      this.log(
+      self.log(
         "Intercepted minimize on popped out app - ignoring:",
         app.constructor.name,
       );
@@ -1673,7 +1674,7 @@ class PopoutModule {
 
     const oldMaximize = app.maximize.bind(app);
     app.maximize = (...args) => {
-      this.log(
+      self.log(
         "Intercepted maximize on popped out app - focusing popout instead:",
         app.constructor.name,
       );
@@ -1685,8 +1686,8 @@ class PopoutModule {
     const oldSetPosition = app.setPosition.bind(app);
     app.setPosition = (...args) => {
       const appId = app.appId || app.id;
-      if (this.poppedOut.has(appId)) {
-        this.log(
+      if (self.poppedOut.has(appId)) {
+        self.log(
           "Intercepted application setting position",
           app.constructor.name,
         );
@@ -1702,7 +1703,7 @@ class PopoutModule {
     state.maximize = oldMaximize;
     state.close = oldClose;
     const finalAppId = app.appId || app.id;
-    this.poppedOut.set(finalAppId, state);
+    self.poppedOut.set(finalAppId, state);
     Hooks.callAll("PopOut:popout", app, popout);
   }
 
