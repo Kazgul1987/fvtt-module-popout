@@ -47,44 +47,14 @@ let isPatched = false;
 async function openSecondScreen(sheet) {
   const popout = await sheet.render(true, { popOut: true });
 
-  const jq = popout.jQuery || window.jQuery;
-  const cloneDelegated = (source, target) => {
-    const events = window.jQuery._data(source, "events");
-    if (!events) return;
-    for (const [type, handlers] of Object.entries(events)) {
-      for (const handler of handlers) {
-        const namespace = handler.namespace ? `.${handler.namespace}` : "";
-        const eventName = `${type}${namespace}`;
-        if (handler.selector) {
-          if (handler.data !== undefined) {
-            jq(target).on(
-              eventName,
-              handler.selector,
-              handler.data,
-              handler.handler,
-            );
-          } else {
-            jq(target).on(eventName, handler.selector, handler.handler);
-          }
-        } else {
-          if (handler.data !== undefined) {
-            jq(target).on(eventName, handler.data, handler.handler);
-          } else {
-            jq(target).on(eventName, handler.handler);
-          }
-        }
-      }
-    }
-  };
-
-  cloneDelegated(window.document, popout.document);
-  if (document.body && popout.document.body) {
-    cloneDelegated(document.body, popout.document.body);
+  if (globalThis.PopoutModule?.singleton) {
+    PopoutModule.singleton.cloneDelegatedEvents(popout);
   }
 
   const newPairs = [
     [window.document, popout.document],
     [window.document.body, popout.document.body],
+    [window.document.documentElement, popout.document.documentElement],
   ];
   pairs.push(...newPairs);
 
