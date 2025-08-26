@@ -750,6 +750,17 @@ class PopoutModule {
       try {
         const listeners = getter(document);
         const store = this.jqListeners.document;
+    if (!getter) return;
+    for (const { target, name } of [
+      { target: document, name: "document" },
+      { target: document.body, name: "body" },
+      { target: document.documentElement, name: "documentElement" },
+      { target: window, name: "window" },
+    ]) {
+      if (!target) continue;
+      try {
+        const listeners = getter(target);
+        const store = this.jqListeners[name];
         for (const [type, arr] of Object.entries(listeners)) {
           for (const l of arr) {
             const fn = l.listener;
@@ -799,7 +810,10 @@ class PopoutModule {
           }
           args.push(fn);
           store.push(args);
+          }
         }
+      } catch {
+        /* no-op */
       }
     }
   }
