@@ -1,5 +1,9 @@
 "use strict";
 
+const PF2E_LISTENERS = [
+  { selector: "[data-action]", event: "click", handlerName: "click" },
+];
+
 class PopoutModule {
   constructor() {
     this.poppedOut = new Map();
@@ -1682,6 +1686,18 @@ class PopoutModule {
             typeof app.activateListeners === "function"
           ) {
             app.activateListeners(popout.document);
+            if (game.system.id === "pf2e") {
+              const pf2eHandlers =
+                globalThis.pf2e?.sheetHandler ?? globalThis.sheetHandler ?? {};
+              for (const { selector, event, handlerName } of PF2E_LISTENERS) {
+                const handler = pf2eHandlers[handlerName];
+                if (typeof handler !== "function") continue;
+                const elements = popout.document.querySelectorAll(selector);
+                for (const el of elements) {
+                  el.addEventListener(event, handler);
+                }
+              }
+            }
           }
         } catch (err) {
           self.log("Failed to clone document events", err);
