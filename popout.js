@@ -354,12 +354,9 @@ class PopoutModule {
     // every new application window creation event.
     const handler = {
       ownKeys: (target) => {
-        return Reflect.ownKeys(target).filter((app) => {
-          const appId = parseInt(app);
-          if (!isNaN(appId)) {
-            return !this.poppedOut.has(appId);
-          }
-          return true;
+        return Reflect.ownKeys(target).filter((key) => {
+          const value = target[key];
+          return !(value && this.poppedOut.has(value));
         });
       },
       set: (obj, prop, value) => {
@@ -484,10 +481,9 @@ class PopoutModule {
       this.log("Ignoring app marked as do not popout", app);
       return;
     }
-    const appIdentifier = app.appId || app.id;
-    if (this.poppedOut.has(appIdentifier)) {
+    if (this.poppedOut.has(app)) {
       this.log("Already popped out");
-      this.poppedOut.get(appIdentifier).window.focus();
+      this.poppedOut.get(app).window.focus();
       return;
     }
 
@@ -865,8 +861,7 @@ class PopoutModule {
       const keys = Object.keys(app.actor.apps);
       if (keys.length == 1) {
         const parent = app.actor.apps[keys[0]];
-        const parentId = parent.appId || parent.id;
-        if (this.poppedOut.has(parentId)) {
+        if (this.poppedOut.has(parent)) {
           this.log("Intercepting dialog of popped out window.");
           this.moveDialog(app, parent);
           return true;
@@ -881,8 +876,7 @@ class PopoutModule {
       const keys = Object.keys(app.object.apps);
       if (keys.length == 1) {
         const parent = app.object.apps[keys[0]];
-        const parentId = parent.appId || parent.id;
-        if (this.poppedOut.has(parentId)) {
+        if (this.poppedOut.has(parent)) {
           this.log("Intercepting dialog of popped out window.");
           this.moveDialog(app, parent);
           return true;
@@ -925,8 +919,7 @@ class PopoutModule {
       return;
     }
 
-    const parentId = parentApp.appId || parentApp.id;
-    const parent = this.poppedOut.get(parentId);
+    const parent = this.poppedOut.get(parentApp);
     const dialogNode = this.getAppElement(app);
 
     // Hide element
@@ -1143,7 +1136,6 @@ class PopoutModule {
     }
 
     // Check both v1 and v2 applications
-    const appIdentifier = app.appId || app.id;
     const isV1App = window.ui.windows[app.appId] !== undefined;
     const isV2App = foundry?.applications?.instances?.has(app.id);
 
@@ -1152,9 +1144,9 @@ class PopoutModule {
       return;
     }
 
-    if (this.poppedOut.has(appIdentifier)) {
+    if (this.poppedOut.has(app)) {
       // This check is to ensure PopOut is idempotent to popout calls.
-      let currentState = this.poppedOut.get(appIdentifier);
+      let currentState = this.poppedOut.get(app);
       if (currentState && currentState.window && !currentState.window.closed) {
         currentState.window.focus();
         return;
@@ -1163,7 +1155,7 @@ class PopoutModule {
         currentState.window &&
         currentState.window.closed
       ) {
-        this.poppedOut.delete(appIdentifier);
+        this.poppedOut.delete(app);
       }
     }
 
@@ -1405,8 +1397,7 @@ class PopoutModule {
 
     window.addEventListener("unload", async (event) => {
       self.log("Unload event", event);
-      const appId = app.appId || app.id;
-      if (self.poppedOut.has(appId)) {
+      if (self.poppedOut.has(app)) {
         await popout.close();
       }
       event.returnValue = true;
@@ -1421,9 +1412,8 @@ class PopoutModule {
       delete popout._origRemoveEventListener;
       self.mirroredNativeListeners.delete(popout);
       self.log("Unload event", event);
-      const appId = app.appId || app.id;
-      if (self.poppedOut.has(appId)) {
-        const poppedOut = self.poppedOut.get(appId);
+      if (self.poppedOut.has(app)) {
+        const poppedOut = self.poppedOut.get(app);
         self.log("Closing popout", app.title);
         app.position = poppedOut.position; // Set the original position.
         app._minimized = poppedOut.minimized;
@@ -1486,7 +1476,7 @@ class PopoutModule {
             child.close();
           }
         }
-        self.poppedOut.delete(appId);
+        self.poppedOut.delete(app);
 
         // Force a re-render or close it
         if (popout._popout_dont_close) {
@@ -1769,7 +1759,24 @@ class PopoutModule {
     const oldRender = app.render.bind(app);
     app.render = (...args) => {
       self.log("Intercepted popout render", app);
-      return oldRender.apply(app, args);
+      const result = oldRender.apply(app, args);
+      const updateState = () => {
+        if (self.poppedOut.has(app)) {
+          const st = self.poppedOut.get(app);
+          const newNode = self.getAppElement(app);
+          if (newNode) st.node = newNode;
+          self.poppedOut.set(app, st);
+        }
+      };
+      if (result instanceof Promise) {
+        return result.then((r) => {
+          updateState();
+          return r;
+        });
+      } else {
+        updateState();
+        return result;
+      }
     };
 
     const oldClose = app.close.bind(app);
@@ -1811,8 +1818,8 @@ class PopoutModule {
 
     const oldSetPosition = app.setPosition.bind(app);
     app.setPosition = (...args) => {
-      const appId = app.appId || app.id;
-      if (self.poppedOut.has(appId)) {
+      const elem = app.element instanceof jQuery ? app.element[0] : app.element;
+      if (!elem || self.poppedOut.has(app)) {
         self.log(
           "Intercepted application setting position",
           app.constructor.name,
@@ -1828,8 +1835,7 @@ class PopoutModule {
     state.minimize = oldMinimize;
     state.maximize = oldMaximize;
     state.close = oldClose;
-    const finalAppId = app.appId || app.id;
-    self.poppedOut.set(finalAppId, state);
+    self.poppedOut.set(app, state);
     Hooks.callAll("PopOut:popout", app, popout);
   }
 
@@ -1888,12 +1894,13 @@ Hooks.once("ready", () => {
 
     instances.delete = function (id) {
       // Clean up our poppedOut map if the app is deleted
-      if (PopoutModule.singleton.poppedOut.has(id)) {
-        const state = PopoutModule.singleton.poppedOut.get(id);
+      const app = instances.get(id);
+      if (app && PopoutModule.singleton.poppedOut.has(app)) {
+        const state = PopoutModule.singleton.poppedOut.get(app);
         if (state && state.window && !state.window.closed) {
           state.window.close();
         }
-        PopoutModule.singleton.poppedOut.delete(id);
+        PopoutModule.singleton.poppedOut.delete(app);
       }
 
       // Call the original delete method
