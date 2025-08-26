@@ -748,38 +748,38 @@ class PopoutModule {
       typeof getEventListeners === "function" ? getEventListeners : null;
     if (getter) {
       try {
-        const listeners = getter(document);
-        const store = this.jqListeners.document;
-    if (!getter) return;
-    for (const { target, name } of [
-      { target: document, name: "document" },
-      { target: document.body, name: "body" },
-      { target: document.documentElement, name: "documentElement" },
-      { target: window, name: "window" },
-    ]) {
-      if (!target) continue;
-      try {
-        const listeners = getter(target);
-        const store = this.jqListeners[name];
-        for (const [type, arr] of Object.entries(listeners)) {
-          for (const l of arr) {
-            const fn = l.listener;
-            if (!fn) continue;
-            const args = [type];
-            if (fn.selector !== undefined) {
-              args.push(fn.selector);
-              if (fn.data !== undefined) args.push(fn.data);
-            } else if (fn.data !== undefined) {
-              args.push(fn.data);
+        for (const { target, name } of [
+          { target: document, name: "document" },
+          { target: document.body, name: "body" },
+          { target: document.documentElement, name: "documentElement" },
+          { target: window, name: "window" },
+        ]) {
+          if (!target) continue;
+          try {
+            const listeners = getter(target);
+            const store = this.jqListeners[name];
+            for (const [type, arr] of Object.entries(listeners)) {
+              for (const l of arr) {
+                const fn = l.listener;
+                if (!fn) continue;
+                const args = [type];
+                if (fn.selector !== undefined) {
+                  args.push(fn.selector);
+                  if (fn.data !== undefined) args.push(fn.data);
+                } else if (fn.data !== undefined) {
+                  args.push(fn.data);
+                }
+                args.push(fn.handler || fn);
+                store.push(args);
+              }
             }
-            args.push(fn.handler || fn);
-            store.push(args);
+          } catch {
+            /* no-op */
           }
         }
       } catch {
         /* no-op */
       }
-      return;
     }
 
     const targets = [
@@ -810,10 +810,7 @@ class PopoutModule {
           }
           args.push(fn);
           store.push(args);
-          }
         }
-      } catch {
-        /* no-op */
       }
     }
   }
