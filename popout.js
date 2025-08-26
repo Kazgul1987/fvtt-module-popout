@@ -1868,7 +1868,19 @@ class PopoutModule {
         if (self.poppedOut.has(app)) {
           const st = self.poppedOut.get(app);
           const newNode = self.getAppElement(app);
-          if (newNode) st.node = newNode;
+          if (newNode) {
+            st.node = newNode;
+            for (const entry of st.observers) {
+              try {
+                entry.observer.disconnect();
+                entry.observer.observe(st.node, entry.options);
+                if (!app[entry.container]) app[entry.container] = {};
+                app[entry.container][entry.key] = entry.observer;
+              } catch (error) {
+                self.log("Error updating MutationObserver:", error);
+              }
+            }
+          }
           self.poppedOut.set(app, st);
         }
       };
