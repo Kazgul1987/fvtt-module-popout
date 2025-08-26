@@ -1230,11 +1230,15 @@ class PopoutModule {
               childList: true,
               subtree: true,
             };
+          const target = key?.toLowerCase()?.includes("body")
+            ? appElement
+            : document;
           state.observers.push({
             container: containerName,
             key,
             observer,
             options,
+            target,
           });
           observer.disconnect();
           observer.takeRecords();
@@ -1713,9 +1717,9 @@ class PopoutModule {
       // routines continue to function within the popout document.
       for (const entry of state.observers) {
         try {
-          const target = entry.key?.toLowerCase()?.includes("body")
-            ? popout.document.body
-            : popout.document;
+          let target = entry.target;
+          if (target === document) target = popout.document;
+          if (target === document.body) target = state.node;
           entry.observer.takeRecords();
           entry.observer.observe(target, entry.options);
           if (!app[entry.container]) app[entry.container] = {};
