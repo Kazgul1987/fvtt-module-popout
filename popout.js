@@ -1708,9 +1708,22 @@ class PopoutModule {
             typeof app.activateListeners === "function"
           ) {
             app.activateListeners(popout.document);
-            if (game.system.id === "pf2e") {
-              const pf2eHandlers =
-                globalThis.pf2e?.sheetHandler ?? globalThis.sheetHandler ?? {};
+            (async () => {
+              let pf2eHandlers =
+                globalThis.pf2e?.sheetHandler ?? globalThis.sheetHandler;
+              if (!pf2eHandlers) {
+                try {
+                  await import("systems/pf2e/module/sheet-handler.js");
+                } catch {
+                  await new Promise((resolve) =>
+                    Hooks.once("pf2e.sheetHandlerReady", resolve),
+                  );
+                }
+                pf2eHandlers =
+                  globalThis.pf2e?.sheetHandler ?? globalThis.sheetHandler;
+              }
+              if (!pf2eHandlers) return;
+              app.activateListeners(popout.document);
               for (const { selector, event, handlerName } of PF2E_LISTENERS) {
                 const handler = pf2eHandlers[handlerName];
                 if (typeof handler !== "function") continue;
@@ -1719,7 +1732,7 @@ class PopoutModule {
                   el.addEventListener(event, handler);
                 }
               }
-            }
+            })();
           }
         } catch (err) {
           self.log("Failed to clone document events", err);
