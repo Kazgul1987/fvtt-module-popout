@@ -1,8 +1,6 @@
 "use strict";
 
-const PF2E_LISTENERS = [
-  { selector: "[data-action]", event: "click", handlerName: "click" },
-];
+const PF2E_LISTENERS = [];
 
 class PopoutModule {
   constructor() {
@@ -1813,8 +1811,13 @@ class PopoutModule {
                 pf2eHandlers =
                   globalThis.pf2e?.sheetHandler ?? globalThis.sheetHandler;
               }
-              if (!pf2eHandlers) return;
-              app.activateListeners(popout.document);
+              if (!pf2eHandlers || typeof pf2eHandlers.click !== "function")
+                return;
+              popout.document.documentElement.addEventListener(
+                "click",
+                pf2eHandlers.click,
+                true,
+              );
               for (const { selector, event, handlerName } of PF2E_LISTENERS) {
                 const handler = pf2eHandlers[handlerName];
                 if (typeof handler !== "function") continue;
