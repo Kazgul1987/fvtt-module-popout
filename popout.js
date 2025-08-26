@@ -1604,6 +1604,12 @@ class PopoutModule {
         try {
           // Clone delegated document events afresh for the new window
           self.cloneDelegatedEvents(popout);
+          if (
+            game.system.id === "pf2e" &&
+            typeof app.activateListeners === "function"
+          ) {
+            app.activateListeners(popout.document);
+          }
         } catch (err) {
           self.log("Failed to clone document events", err);
         }
