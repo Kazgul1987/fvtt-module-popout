@@ -1229,7 +1229,7 @@ class PopoutModule {
               subtree: true,
             };
           const target = key?.toLowerCase()?.includes("body")
-            ? appElement
+            ? document.body
             : document;
           state.observers.push({
             container: containerName,
@@ -1717,7 +1717,7 @@ class PopoutModule {
         try {
           let target = entry.target;
           if (target === document) target = popout.document;
-          if (target === document.body) target = state.node;
+          else if (target === document.body) target = popout.document.body;
           entry.observer.takeRecords();
           entry.observer.observe(target, entry.options);
           if (!app[entry.container]) app[entry.container] = {};
