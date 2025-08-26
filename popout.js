@@ -746,27 +746,61 @@ class PopoutModule {
   _seedExistingJqListeners() {
     const getter =
       typeof getEventListeners === "function" ? getEventListeners : null;
-    if (!getter) return;
-    try {
-      const listeners = getter(document);
-      const store = this.jqListeners.document;
-      for (const [type, arr] of Object.entries(listeners)) {
+    if (getter) {
+      try {
+        const listeners = getter(document);
+        const store = this.jqListeners.document;
+        for (const [type, arr] of Object.entries(listeners)) {
+          for (const l of arr) {
+            const fn = l.listener;
+            if (!fn) continue;
+            const args = [type];
+            if (fn.selector !== undefined) {
+              args.push(fn.selector);
+              if (fn.data !== undefined) args.push(fn.data);
+            } else if (fn.data !== undefined) {
+              args.push(fn.data);
+            }
+            args.push(fn.handler || fn);
+            store.push(args);
+          }
+        }
+      } catch {
+        /* no-op */
+      }
+      return;
+    }
+
+    const targets = [
+      [document, "document"],
+      [document.body, "body"],
+      [document.documentElement, "documentElement"],
+      [window, "window"],
+    ];
+    for (const [target, name] of targets) {
+      let events;
+      try {
+        events = jQuery?._data(target, "events");
+      } catch {
+        continue;
+      }
+      if (!events) continue;
+      const store = this.jqListeners[name];
+      for (const [type, arr] of Object.entries(events)) {
         for (const l of arr) {
-          const fn = l.listener;
+          const fn = l.handler;
           if (!fn) continue;
           const args = [type];
-          if (fn.selector !== undefined) {
-            args.push(fn.selector);
-            if (fn.data !== undefined) args.push(fn.data);
-          } else if (fn.data !== undefined) {
-            args.push(fn.data);
+          if (l.selector !== undefined) {
+            args.push(l.selector);
+            if (l.data !== undefined) args.push(l.data);
+          } else if (l.data !== undefined) {
+            args.push(l.data);
           }
-          args.push(fn.handler || fn);
+          args.push(fn);
           store.push(args);
         }
       }
-    } catch {
-      /* no-op */
     }
   }
 
