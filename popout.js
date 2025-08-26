@@ -344,6 +344,7 @@ class PopoutModule {
     };
 
     this._seedExistingNativeListeners();
+    this._seedExistingJqListeners();
 
     // We replace the games window registry with a proxy object so we can intercept
     // every new application window creation event.
@@ -739,6 +740,33 @@ class PopoutModule {
           store.get(type).push({ listener: target[key], options: false });
         }
       }
+    }
+  }
+
+  _seedExistingJqListeners() {
+    const getter =
+      typeof getEventListeners === "function" ? getEventListeners : null;
+    if (!getter) return;
+    try {
+      const listeners = getter(document);
+      const store = this.jqListeners.document;
+      for (const [type, arr] of Object.entries(listeners)) {
+        for (const l of arr) {
+          const fn = l.listener;
+          if (!fn) continue;
+          const args = [type];
+          if (fn.selector !== undefined) {
+            args.push(fn.selector);
+            if (fn.data !== undefined) args.push(fn.data);
+          } else if (fn.data !== undefined) {
+            args.push(fn.data);
+          }
+          args.push(fn.handler || fn);
+          store.push(args);
+        }
+      }
+    } catch {
+      /* no-op */
     }
   }
 
