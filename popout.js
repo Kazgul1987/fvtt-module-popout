@@ -15,6 +15,7 @@ class PopoutModule {
     this.nativeListeners = {
       document: new Map(),
       body: new Map(),
+      documentElement: new Map(),
       window: new Map(),
     };
     this.mirroredNativeListeners = new Map();
@@ -183,13 +184,20 @@ class PopoutModule {
       options,
     ) {
       const result = origAddEventListener.call(this, type, listener, options);
-      if (this === document || this === document.body || this === window) {
+      if (
+        this === document ||
+        this === document.body ||
+        this === document.documentElement ||
+        this === window
+      ) {
         const targetName =
           this === document
             ? "document"
             : this === document.body
               ? "body"
-              : "window";
+              : this === document.documentElement
+                ? "documentElement"
+                : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
         store.get(type).push({ listener, options });
@@ -201,12 +209,15 @@ class PopoutModule {
               ? win.document
               : targetName === "body"
                 ? win.document.body
-                : win;
+                : targetName === "documentElement"
+                  ? win.document.documentElement
+                  : win;
           if (!docTarget) continue;
           origAddEventListener.call(docTarget, type, listener, options);
           let mirror = self.mirroredNativeListeners.get(win) || {
             document: [],
             body: [],
+            documentElement: [],
             window: [],
           };
           mirror[targetName].push({ type, listener, options });
@@ -227,13 +238,20 @@ class PopoutModule {
         listener,
         options,
       );
-      if (this === document || this === document.body || this === window) {
+      if (
+        this === document ||
+        this === document.body ||
+        this === document.documentElement ||
+        this === window
+      ) {
         const targetName =
           this === document
             ? "document"
             : this === document.body
               ? "body"
-              : "window";
+              : this === document.documentElement
+                ? "documentElement"
+                : "window";
         const store = self.nativeListeners[targetName];
         const arr = store.get(type);
         if (arr) {
@@ -260,7 +278,9 @@ class PopoutModule {
               ? win.document
               : targetName === "body"
                 ? win.document.body
-                : win;
+                : targetName === "documentElement"
+                  ? win.document.documentElement
+                  : win;
           if (!docTarget) continue;
           origRemoveEventListener.call(docTarget, type, listener, options);
           const mirror = self.mirroredNativeListeners.get(win);
@@ -681,15 +701,27 @@ class PopoutModule {
 
   cloneNativeEventListeners(popout) {
     const origAdd = this._origAddEventListener;
-    const mirror = { document: [], body: [], window: [] };
-    for (const targetName of ["document", "body", "window"]) {
+    const mirror = {
+      document: [],
+      body: [],
+      documentElement: [],
+      window: [],
+    };
+    for (const targetName of [
+      "document",
+      "body",
+      "documentElement",
+      "window",
+    ]) {
       const store = this.nativeListeners[targetName];
       const docTarget =
         targetName === "document"
           ? popout.document
           : targetName === "body"
             ? popout.document.body
-            : popout;
+            : targetName === "documentElement"
+              ? popout.document.documentElement
+              : popout;
       if (!store || !docTarget) continue;
       for (const [type, handlers] of store.entries()) {
         for (const data of handlers) {
@@ -711,6 +743,7 @@ class PopoutModule {
     for (const { target, name } of [
       { target: document, name: "document" },
       { target: document.body, name: "body" },
+      { target: document.documentElement, name: "documentElement" },
       { target: window, name: "window" },
     ]) {
       if (!target) continue;
@@ -1237,6 +1270,7 @@ class PopoutModule {
       if (
         this === popout.document ||
         this === popout.document.body ||
+        this === popout.document.documentElement ||
         this === popout
       ) {
         const targetName =
@@ -1244,7 +1278,9 @@ class PopoutModule {
             ? "document"
             : this === popout.document.body
               ? "body"
-              : "window";
+              : this === popout.document.documentElement
+                ? "documentElement"
+                : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
         store.get(type).push({ listener, options });
@@ -1259,7 +1295,9 @@ class PopoutModule {
                   ? win.document
                   : tn === "body"
                     ? win.document.body
-                    : win;
+                    : tn === "documentElement"
+                      ? win.document.documentElement
+                      : win;
               for (const m of list) {
                 self._origRemoveEventListener.call(
                   docTarget,
@@ -1285,6 +1323,7 @@ class PopoutModule {
       if (
         this === popout.document ||
         this === popout.document.body ||
+        this === popout.document.documentElement ||
         this === popout
       ) {
         const targetName =
@@ -1292,7 +1331,9 @@ class PopoutModule {
             ? "document"
             : this === popout.document.body
               ? "body"
-              : "window";
+              : this === popout.document.documentElement
+                ? "documentElement"
+                : "window";
         const store = self.nativeListeners[targetName];
         const arr = store.get(type);
         if (arr) {
@@ -1322,7 +1363,9 @@ class PopoutModule {
                   ? win.document
                   : tn === "body"
                     ? win.document.body
-                    : win;
+                    : tn === "documentElement"
+                      ? win.document.documentElement
+                      : win;
               for (const m of list) {
                 self._origRemoveEventListener.call(
                   docTarget,
