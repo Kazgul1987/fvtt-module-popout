@@ -1602,7 +1602,10 @@ class PopoutModule {
           // Update state and application references to the adopted node
           state.node = adoptedNode;
           app._element = state.node;
-          app.element = $(state.node);
+          Object.defineProperty(app, "element", {
+            configurable: true,
+            get: () => $(state.node),
+          });
         } catch (error) {
           self.log("Error adopting ApplicationV2 node:", error);
           throw error;
@@ -1613,7 +1616,10 @@ class PopoutModule {
         body.style.overflow = "auto";
         body.append(state.node);
         app._element = state.node;
-        app.element = $(state.node);
+        Object.defineProperty(app, "element", {
+          configurable: true,
+          get: () => $(state.node),
+        });
       }
 
       state.node.style.cssText = `
