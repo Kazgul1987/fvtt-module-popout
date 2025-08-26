@@ -1179,7 +1179,34 @@ class PopoutModule {
       display: appElement.style.display,
       css: appElement.style.cssText,
       children: [],
+      observers: [],
     };
+
+    // Disconnect any MutationObservers tracking the sheet so they can be
+    // reattached once the node is moved to the popout window. Some systems
+    // (e.g. PF2e) store observers in private properties such as
+    // `_observers.body` which watch the document for DOM cleanup events.
+    const observerContainers = ["_observers", "_elementObservers"]; // common fields
+    for (const containerName of observerContainers) {
+      const container = app[containerName];
+      if (!container) continue;
+      for (const [key, observer] of Object.entries(container)) {
+        if (observer instanceof MutationObserver) {
+          const options = app._observerInit?.[key] ||
+            app._observerOptions?.[key] || {
+              childList: true,
+              subtree: true,
+            };
+          state.observers.push({
+            container: containerName,
+            key,
+            observer,
+            options,
+          });
+          observer.disconnect();
+        }
+      }
+    }
 
     this.log("Application state", state);
 
@@ -1636,6 +1663,21 @@ class PopoutModule {
           configurable: true,
           get: () => $(state.node),
         });
+      }
+
+      // Recreate any disconnected MutationObservers so system-level cleanup
+      // routines continue to function within the popout document.
+      for (const entry of state.observers) {
+        try {
+          const target = entry.key?.toLowerCase()?.includes("body")
+            ? popout.document.body
+            : popout.document;
+          entry.observer.observe(target, entry.options);
+          if (!app[entry.container]) app[entry.container] = {};
+          app[entry.container][entry.key] = entry.observer;
+        } catch (error) {
+          self.log("Error reattaching MutationObserver:", error);
+        }
       }
 
       state.node.style.cssText = `
