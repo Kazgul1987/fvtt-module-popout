@@ -1237,6 +1237,7 @@ class PopoutModule {
             options,
           });
           observer.disconnect();
+          observer.takeRecords();
         }
       }
     }
@@ -1715,6 +1716,7 @@ class PopoutModule {
           const target = entry.key?.toLowerCase()?.includes("body")
             ? popout.document.body
             : popout.document;
+          entry.observer.takeRecords();
           entry.observer.observe(target, entry.options);
           if (!app[entry.container]) app[entry.container] = {};
           app[entry.container][entry.key] = entry.observer;
