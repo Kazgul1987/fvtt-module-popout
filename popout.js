@@ -746,6 +746,10 @@ class PopoutModule {
   _seedExistingJqListeners() {
     const getter =
       typeof getEventListeners === "function" ? getEventListeners : null;
+    if (getter) {
+      try {
+        const listeners = getter(document);
+        const store = this.jqListeners.document;
     if (!getter) return;
     for (const { target, name } of [
       { target: document, name: "document" },
@@ -770,6 +774,42 @@ class PopoutModule {
             }
             args.push(fn.handler || fn);
             store.push(args);
+          }
+        }
+      } catch {
+        /* no-op */
+      }
+      return;
+    }
+
+    const targets = [
+      [document, "document"],
+      [document.body, "body"],
+      [document.documentElement, "documentElement"],
+      [window, "window"],
+    ];
+    for (const [target, name] of targets) {
+      let events;
+      try {
+        events = jQuery?._data(target, "events");
+      } catch {
+        continue;
+      }
+      if (!events) continue;
+      const store = this.jqListeners[name];
+      for (const [type, arr] of Object.entries(events)) {
+        for (const l of arr) {
+          const fn = l.handler;
+          if (!fn) continue;
+          const args = [type];
+          if (l.selector !== undefined) {
+            args.push(l.selector);
+            if (l.data !== undefined) args.push(l.data);
+          } else if (l.data !== undefined) {
+            args.push(l.data);
+          }
+          args.push(fn);
+          store.push(args);
           }
         }
       } catch {
