@@ -1872,10 +1872,16 @@ class PopoutModule {
             st.node = newNode;
             for (const entry of st.observers) {
               try {
-                entry.observer.disconnect();
-                entry.observer.observe(st.node, entry.options);
+                const observer = entry.observer;
+                let target = entry.target;
+                if (target === document) target = popout.document;
+                else if (target === document.body) target = st.node;
+                observer.disconnect();
+                observer.takeRecords(); // discard old mutation entries
+                observer.observe(target, entry.options);
+                entry.target = target; // remember for later renders
                 if (!app[entry.container]) app[entry.container] = {};
-                app[entry.container][entry.key] = entry.observer;
+                app[entry.container][entry.key] = observer;
               } catch (error) {
                 self.log("Error updating MutationObserver:", error);
               }
