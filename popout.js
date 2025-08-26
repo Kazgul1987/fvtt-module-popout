@@ -1495,7 +1495,33 @@ class PopoutModule {
           self.addPopout(app);
         } else {
           Hooks.callAll("PopOut:close", app, node);
-          await app.close();
+
+          let element =
+            app.element instanceof jQuery ? app.element[0] : app.element;
+          if (!element) {
+            const fallback =
+              app._element instanceof jQuery ? app._element[0] : app._element;
+            if (fallback) {
+              app._element = fallback;
+              Object.defineProperty(app, "element", {
+                configurable: true,
+                get: () => $(app._element),
+              });
+              element = fallback;
+            }
+          }
+
+          if (!element) {
+            Hooks.callAll("PopOut:popin", app);
+            await app.render(true);
+            self.addPopout(app);
+          } else {
+            try {
+              await app.close();
+            } catch (error) {
+              console.error("PopOut: failed to close application", error);
+            }
+          }
         }
         await popout.close();
       }
