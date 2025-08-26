@@ -1237,6 +1237,8 @@ class PopoutModule {
             observer,
             options,
             target,
+            originalTarget: target,
+            isBody: target === document.body,
           });
           observer.disconnect();
           observer.takeRecords();
@@ -1715,13 +1717,14 @@ class PopoutModule {
       // routines continue to function within the popout document.
       for (const entry of state.observers) {
         try {
-          let target = entry.target;
-          if (target === document) target = popout.document;
-          else if (target === document.body) target = popout.document.body;
-          entry.observer.takeRecords();
-          entry.observer.observe(target, entry.options);
+          const observer = entry.observer;
+          const target = entry.isBody ? state.node : popout.document;
+          observer.disconnect();
+          observer.takeRecords();
+          observer.observe(target, entry.options);
+          entry.target = target;
           if (!app[entry.container]) app[entry.container] = {};
-          app[entry.container][entry.key] = entry.observer;
+          app[entry.container][entry.key] = observer;
         } catch (error) {
           self.log("Error reattaching MutationObserver:", error);
         }
@@ -1876,9 +1879,7 @@ class PopoutModule {
             for (const entry of st.observers) {
               try {
                 const observer = entry.observer;
-                let target = entry.target;
-                if (target === document) target = popout.document;
-                else if (target === document.body) target = st.node;
+                const target = entry.isBody ? st.node : popout.document;
                 observer.disconnect();
                 observer.takeRecords(); // discard old mutation entries
                 observer.observe(target, entry.options);
