@@ -1630,7 +1630,12 @@ class PopoutModule {
 
     // We wait longer than just the DOMContentLoaded
     // because of how the document is constructed manually.
-    popout.addEventListener("load", async (event) => {
+        // --- IMPORTANT: initialize after document is ready ---
+    let _popoutInitialized = false;
+    const initPopout = async (event) => {
+      if (_popoutInitialized) return;
+      _popoutInitialized = true;
+
       if (popout.screenX < 0 || popout.screenY < 0) {
         // Fallback in case for some reason the popout out window is not
         // on the visible screen. May not work or be blocked by popout blockers,
@@ -1849,7 +1854,14 @@ class PopoutModule {
       }
 
       Hooks.callAll("PopOut:loaded", app, state.node);
-    });
+        };
+
+    popout.addEventListener("load", initPopout, { once: true });
+    // If the popout document has already finished loading, init immediately.
+    if (popout.document?.readyState === "complete") {
+      queueMicrotask(() => initPopout({ target: popout.document }));
+    }
+
 
     // -------------------- Install intercept methods ----------------
 
