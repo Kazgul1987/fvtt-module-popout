@@ -23,6 +23,11 @@ class PopoutModule {
       documentElement: [],
       window: [],
     };
+
+
+    // Internal: function identity mapping for stable de-duplication across windows
+    this._fnIds = new WeakMap();
+    this._fnIdCounter = 0;
   }
 
   log(msg, ...args) {
@@ -31,6 +36,69 @@ class PopoutModule {
       console.debug(`%c PopoutModule: ${msg}`, color, ...args);
     }
   }
+
+
+/**
+ * Create a stable numeric id for a function reference so we can de-duplicate listeners.
+ */
+_getFnId(fn) {
+  if (typeof fn !== "function") return "na";
+  let id = this._fnIds.get(fn);
+  if (!id) {
+    id = String(++this._fnIdCounter);
+    this._fnIds.set(fn, id);
+  }
+  return id;
+}
+
+/**
+ * Normalize addEventListener options so comparisons are stable.
+ */
+_normalizeListenerOptions(options) {
+  if (typeof options === "boolean") {
+    return { capture: options, once: false, passive: false };
+  }
+  return {
+    capture: !!options?.capture,
+    once: !!options?.once,
+    passive: !!options?.passive,
+  };
+}
+
+_nativeListenerKey(targetName, type, listener, options) {
+  const o = this._normalizeListenerOptions(options);
+  return `${targetName}:${type}:${this._getFnId(listener)}:${o.capture ? 1 : 0}:${o.once ? 1 : 0}:${o.passive ? 1 : 0}`;
+}
+
+/**
+ * Store native listener data with de-duplication (based on type + function identity + key options).
+ */
+_storeNativeListener(targetName, type, listener, options) {
+  const store = this.nativeListeners[targetName];
+  if (!store) return;
+  if (!store.has(type)) store.set(type, []);
+  const arr = store.get(type);
+  const key = this._nativeListenerKey(targetName, type, listener, options);
+  // Attach a lightweight key to entries to speed up comparisons
+  if (arr.some((e) => e && e.__popoutKey === key)) return;
+  arr.push({ listener, options, __popoutKey: key });
+}
+
+_removeNativeListener(targetName, type, listener, options) {
+  const store = this.nativeListeners[targetName];
+  if (!store) return;
+  const arr = store.get(type);
+  if (!arr) return;
+  const key = this._nativeListenerKey(targetName, type, listener, options);
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i]?.__popoutKey === key) {
+      arr.splice(i, 1);
+      break;
+    }
+  }
+  if (arr.length === 0) store.delete(type);
+}
+
 
   isSystemUI(app) {
     // Check if we're on v13 or later
@@ -198,7 +266,7 @@ class PopoutModule {
                 : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
-        store.get(type).push({ listener, options });
+        self._storeNativeListener(targetName, type, listener, options);
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -211,14 +279,23 @@ class PopoutModule {
                   ? win.document.documentElement
                   : win;
           if (!docTarget) continue;
-          origAddEventListener.call(docTarget, type, listener, options);
+          // De-duplicate per-window to avoid multiple identical bindings
+          const key = self._nativeListenerKey(targetName, type, listener, options);
+          win._popout_nativeKeys = win._popout_nativeKeys || new Set();
+          if (!win._popout_nativeKeys.has(key)) {
+            origAddEventListener.call(docTarget, type, listener, options);
+            win._popout_nativeKeys.add(key);
+          }
+
           let mirror = self.mirroredNativeListeners.get(win) || {
             document: [],
             body: [],
             documentElement: [],
             window: [],
           };
-          mirror[targetName].push({ type, listener, options });
+          if (!mirror[targetName].some((m) => self._nativeListenerKey(targetName, m.type, m.listener, m.options) === key)) {
+            mirror[targetName].push({ type, listener, options, __popoutKey: key });
+          }
           self.mirroredNativeListeners.set(win, mirror);
         }
       }
@@ -250,24 +327,8 @@ class PopoutModule {
               : this === document.documentElement
                 ? "documentElement"
                 : "window";
-        const store = self.nativeListeners[targetName];
-        const arr = store.get(type);
-        if (arr) {
-          const capture =
-            typeof options === "boolean" ? options : options?.capture;
-          for (let i = arr.length - 1; i >= 0; i--) {
-            const item = arr[i];
-            const itemCapture =
-              typeof item.options === "boolean"
-                ? item.options
-                : item.options?.capture;
-            if (item.listener === listener && itemCapture === capture) {
-              arr.splice(i, 1);
-              break;
-            }
-          }
-          if (arr.length === 0) store.delete(type);
-        }
+        self._removeNativeListener(targetName, type, listener, options);
+
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -281,6 +342,9 @@ class PopoutModule {
                   : win;
           if (!docTarget) continue;
           origRemoveEventListener.call(docTarget, type, listener, options);
+          // Keep per-window de-duplication state in sync with removals
+          const key = self._nativeListenerKey(targetName, type, listener, options);
+          if (win._popout_nativeKeys) win._popout_nativeKeys.delete(key);
           const mirror = self.mirroredNativeListeners.get(win);
           if (mirror) {
             const list = mirror[targetName];
@@ -679,6 +743,8 @@ class PopoutModule {
   }
 
   cloneDelegatedEvents(popout) {
+    if (popout._popout_delegatedEventsCloned) return;
+    popout._popout_delegatedEventsCloned = true;
     const jq = popout.jQuery || window.jQuery;
     const clone = (name, target) => {
       const events = this.jqListeners[name];
@@ -723,11 +789,16 @@ class PopoutModule {
       if (!store || !docTarget) continue;
       for (const [type, handlers] of store.entries()) {
         for (const data of handlers) {
+          const key = this._nativeListenerKey(targetName, type, data.listener, data.options);
+          popout._popout_nativeKeys = popout._popout_nativeKeys || new Set();
+          if (popout._popout_nativeKeys.has(key)) continue;
           origAdd.call(docTarget, type, data.listener, data.options);
+          popout._popout_nativeKeys.add(key);
           mirror[targetName].push({
             type,
             listener: data.listener,
             options: data.options,
+            __popoutKey: key,
           });
         }
       }
@@ -857,7 +928,10 @@ class PopoutModule {
   _storeJqEvent(target, args) {
     const name = this._getJqTargetName(target);
     if (!name) return;
-    this.jqListeners[name].push(args);
+    const list = this.jqListeners[name];
+    // De-duplicate identical registrations (common when popouts are opened/closed repeatedly)
+    if (list.some((a) => a.length === args.length && a.every((v, i) => v === args[i]))) return;
+    list.push(args);
   }
 
   _removeJqEvent(target, args) {
@@ -1288,7 +1362,7 @@ class PopoutModule {
                 : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
-        store.get(type).push({ listener, options });
+        self._storeNativeListener(targetName, type, listener, options);
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed || win === popout) continue;
@@ -1313,6 +1387,8 @@ class PopoutModule {
               }
             }
           }
+          // We just removed mirrored listeners; clear de-dup keys so re-cloning can re-attach them
+          win._popout_nativeKeys = new Set();
           self.cloneNativeEventListeners(win);
         }
       }
@@ -1339,24 +1415,10 @@ class PopoutModule {
               : this === popout.document.documentElement
                 ? "documentElement"
                 : "window";
-        const store = self.nativeListeners[targetName];
-        const arr = store.get(type);
-        if (arr) {
-          const capture =
-            typeof options === "boolean" ? options : options?.capture;
-          for (let i = arr.length - 1; i >= 0; i--) {
-            const item = arr[i];
-            const itemCapture =
-              typeof item.options === "boolean"
-                ? item.options
-                : item.options?.capture;
-            if (item.listener === listener && itemCapture === capture) {
-              arr.splice(i, 1);
-              break;
-            }
-          }
-          if (arr.length === 0) store.delete(type);
-        }
+        self._removeNativeListener(targetName, type, listener, options);
+        // Keep per-window de-duplication state in sync with removals
+        const key = self._nativeListenerKey(targetName, type, listener, options);
+        if (popout._popout_nativeKeys) popout._popout_nativeKeys.delete(key);
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed || win === popout) continue;
@@ -1381,6 +1443,8 @@ class PopoutModule {
               }
             }
           }
+          // We just removed mirrored listeners; clear de-dup keys so re-cloning can re-attach them
+          win._popout_nativeKeys = new Set();
           self.cloneNativeEventListeners(win);
         }
       }
@@ -1767,28 +1831,56 @@ class PopoutModule {
         if ([3, 4, 5].includes(ev.button)) ev.preventDefault();
       });
 
-      // Forward keyboard events to main window for keybinding support
-      // NOTE: v13 changed the keyboard API, _handleKeyboardEvent is private/removed
-      popout.addEventListener("keydown", (event) => {
-        if (window.keyboard && window.keyboard._handleKeyboardEvent) {
-          // v12 and earlier - use private method
-          window.keyboard._handleKeyboardEvent(event, false);
-        } else if (game.keyboard && game.keyboard.onKeyDown) {
-          // v13+ - try public API
-          game.keyboard.onKeyDown(event);
+            // Forward keyboard events from the popout back to the main window so Foundry keybindings work reliably.
+      // In v13+, internal keyboard manager methods may change; re-dispatching is more stable than calling private APIs.
+      const _popoutForwardKeyEvent = (ev) => {
+        try {
+          if (!ev) return;
+          if (ev.defaultPrevented) return;
+
+          // Avoid triggering global keybindings while typing in text fields (unless a modifier is held).
+          const t = ev.target;
+          const tag = t?.tagName?.toLowerCase?.();
+          const isTextInput =
+            tag === "input" ||
+            tag === "textarea" ||
+            tag === "select" ||
+            t?.isContentEditable;
+
+          const hasModifier = ev.ctrlKey || ev.metaKey || ev.altKey;
+          if (isTextInput && !hasModifier) return;
+
+          const init = {
+            key: ev.key,
+            code: ev.code,
+            location: ev.location,
+            repeat: ev.repeat,
+            ctrlKey: ev.ctrlKey,
+            shiftKey: ev.shiftKey,
+            altKey: ev.altKey,
+            metaKey: ev.metaKey,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          };
+
+          const cloned = new KeyboardEvent(ev.type, init);
+
+          // Dispatch to the main window and document (most Foundry listeners are bound here).
+          window.dispatchEvent(cloned);
+          document.dispatchEvent(cloned);
+
+          // Legacy fallback (v12 and earlier) if available.
+          if (window.keyboard && window.keyboard._handleKeyboardEvent) {
+            window.keyboard._handleKeyboardEvent(cloned, ev.type === "keyup");
+          }
+        } catch (e) {
+          // ignore
         }
-        // For v13, if no API available, let the event bubble normally
-      });
-      popout.addEventListener("keyup", (event) => {
-        if (window.keyboard && window.keyboard._handleKeyboardEvent) {
-          // v12 and earlier - use private method
-          window.keyboard._handleKeyboardEvent(event, true);
-        } else if (game.keyboard && game.keyboard.onKeyUp) {
-          // v13+ - try public API
-          game.keyboard.onKeyUp(event);
-        }
-        // For v13, if no API available, let the event bubble normally
-      });
+      };
+
+      popout.addEventListener("keydown", _popoutForwardKeyEvent, true);
+      popout.addEventListener("keyup", _popoutForwardKeyEvent, true);
 
       // Always refresh event listeners when the window loads so they
       // are re-mirrored on subsequent openings.
@@ -1821,11 +1913,14 @@ class PopoutModule {
               }
               if (!pf2eHandlers || typeof pf2eHandlers.click !== "function")
                 return;
+              if (!popout._popout_pf2eSheetHandlerBound) {
               popout.document.documentElement.addEventListener(
                 "click",
                 pf2eHandlers.click,
                 true,
               );
+              popout._popout_pf2eSheetHandlerBound = true;
+            }
               for (const { selector, event, handlerName } of PF2E_LISTENERS) {
                 const handler = pf2eHandlers[handlerName];
                 if (typeof handler !== "function") continue;
