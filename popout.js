@@ -24,10 +24,11 @@ class PopoutModule {
       window: [],
     };
 
+    // Dedup guards per popout window to prevent double-binding listeners
+    this._popoutListenerKeys = new WeakMap(); // popoutWindow -> Set<string>
+    this._fnIds = new WeakMap(); // Function -> string id
+    this._fnIdSeq = 0;
 
-    // Internal: function identity mapping for stable de-duplication across windows
-    this._fnIds = new WeakMap();
-    this._fnIdCounter = 0;
   }
 
   log(msg, ...args) {
@@ -38,67 +39,64 @@ class PopoutModule {
   }
 
 
-/**
- * Create a stable numeric id for a function reference so we can de-duplicate listeners.
- */
-_getFnId(fn) {
-  if (typeof fn !== "function") return "na";
-  let id = this._fnIds.get(fn);
-  if (!id) {
-    id = String(++this._fnIdCounter);
-    this._fnIds.set(fn, id);
+  /**
+   * Create a stable key for a listener to avoid double-binding in popout windows.
+   */
+  _listenerKey(targetName, type, listener, options) {
+    // Assign stable function ids
+    let id = this._fnIds.get(listener);
+    if (!id) {
+      this._fnIdSeq += 1;
+      id = String(this._fnIdSeq);
+      this._fnIds.set(listener, id);
+    }
+
+    // Normalize options
+    let capture = false;
+    let once = false;
+    let passive = false;
+    if (typeof options === "boolean") capture = options;
+    else if (options && typeof options === "object") {
+      capture = !!options.capture;
+      once = !!options.once;
+      passive = !!options.passive;
+    }
+
+    return `${targetName}|${type}|${id}|c${capture ? 1 : 0}o${once ? 1 : 0}p${passive ? 1 : 0}`;
   }
-  return id;
-}
 
-/**
- * Normalize addEventListener options so comparisons are stable.
- */
-_normalizeListenerOptions(options) {
-  if (typeof options === "boolean") {
-    return { capture: options, once: false, passive: false };
-  }
-  return {
-    capture: !!options?.capture,
-    once: !!options?.once,
-    passive: !!options?.passive,
-  };
-}
+  /**
+   * Patch tooltipster to not throw if a tooltip was already destroyed.
+   * PF2e uses tooltipster and can double-destroy during popout teardown.
+   */
+  _patchTooltipsterNoThrow(win) {
+    try {
+      const jq = win?.jQuery ?? win?.$;
+      const ts = jq?.tooltipster;
+      if (!ts || ts.__popoutNoThrowPatched) return;
 
-_nativeListenerKey(targetName, type, listener, options) {
-  const o = this._normalizeListenerOptions(options);
-  return `${targetName}:${type}:${this._getFnId(listener)}:${o.capture ? 1 : 0}:${o.once ? 1 : 0}:${o.passive ? 1 : 0}`;
-}
+      const orig = ts.__destroyError;
+      if (typeof orig !== "function") return;
 
-/**
- * Store native listener data with de-duplication (based on type + function identity + key options).
- */
-_storeNativeListener(targetName, type, listener, options) {
-  const store = this.nativeListeners[targetName];
-  if (!store) return;
-  if (!store.has(type)) store.set(type, []);
-  const arr = store.get(type);
-  const key = this._nativeListenerKey(targetName, type, listener, options);
-  // Attach a lightweight key to entries to speed up comparisons
-  if (arr.some((e) => e && e.__popoutKey === key)) return;
-  arr.push({ listener, options, __popoutKey: key });
-}
+      ts.__destroyError = function (...args) {
+        try {
+          return orig.apply(this, args);
+        } catch (err) {
+          // Suppress "This tooltip has been destroyed" errors, which can occur during popout cleanup
+          try {
+            (PopoutModule.singleton ?? {}).log?.("Suppressed tooltipster destroy error", err);
+          } catch {
+            // ignore
+          }
+          return null;
+        }
+      };
 
-_removeNativeListener(targetName, type, listener, options) {
-  const store = this.nativeListeners[targetName];
-  if (!store) return;
-  const arr = store.get(type);
-  if (!arr) return;
-  const key = this._nativeListenerKey(targetName, type, listener, options);
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i]?.__popoutKey === key) {
-      arr.splice(i, 1);
-      break;
+      ts.__popoutNoThrowPatched = true;
+    } catch {
+      // ignore
     }
   }
-  if (arr.length === 0) store.delete(type);
-}
-
 
   isSystemUI(app) {
     // Check if we're on v13 or later
@@ -266,7 +264,7 @@ _removeNativeListener(targetName, type, listener, options) {
                 : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
-        self._storeNativeListener(targetName, type, listener, options);
+        store.get(type).push({ listener, options });
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -279,23 +277,14 @@ _removeNativeListener(targetName, type, listener, options) {
                   ? win.document.documentElement
                   : win;
           if (!docTarget) continue;
-          // De-duplicate per-window to avoid multiple identical bindings
-          const key = self._nativeListenerKey(targetName, type, listener, options);
-          win._popout_nativeKeys = win._popout_nativeKeys || new Set();
-          if (!win._popout_nativeKeys.has(key)) {
-            origAddEventListener.call(docTarget, type, listener, options);
-            win._popout_nativeKeys.add(key);
-          }
-
+          origAddEventListener.call(docTarget, type, listener, options);
           let mirror = self.mirroredNativeListeners.get(win) || {
             document: [],
             body: [],
             documentElement: [],
             window: [],
           };
-          if (!mirror[targetName].some((m) => self._nativeListenerKey(targetName, m.type, m.listener, m.options) === key)) {
-            mirror[targetName].push({ type, listener, options, __popoutKey: key });
-          }
+          mirror[targetName].push({ type, listener, options });
           self.mirroredNativeListeners.set(win, mirror);
         }
       }
@@ -327,8 +316,24 @@ _removeNativeListener(targetName, type, listener, options) {
               : this === document.documentElement
                 ? "documentElement"
                 : "window";
-        self._removeNativeListener(targetName, type, listener, options);
-
+        const store = self.nativeListeners[targetName];
+        const arr = store.get(type);
+        if (arr) {
+          const capture =
+            typeof options === "boolean" ? options : options?.capture;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const item = arr[i];
+            const itemCapture =
+              typeof item.options === "boolean"
+                ? item.options
+                : item.options?.capture;
+            if (item.listener === listener && itemCapture === capture) {
+              arr.splice(i, 1);
+              break;
+            }
+          }
+          if (arr.length === 0) store.delete(type);
+        }
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed) continue;
@@ -342,9 +347,6 @@ _removeNativeListener(targetName, type, listener, options) {
                   : win;
           if (!docTarget) continue;
           origRemoveEventListener.call(docTarget, type, listener, options);
-          // Keep per-window de-duplication state in sync with removals
-          const key = self._nativeListenerKey(targetName, type, listener, options);
-          if (win._popout_nativeKeys) win._popout_nativeKeys.delete(key);
           const mirror = self.mirroredNativeListeners.get(win);
           if (mirror) {
             const list = mirror[targetName];
@@ -743,8 +745,8 @@ _removeNativeListener(targetName, type, listener, options) {
   }
 
   cloneDelegatedEvents(popout) {
-    if (popout._popout_delegatedEventsCloned) return;
-    popout._popout_delegatedEventsCloned = true;
+    if (popout.__popoutDelegatedEventsCloned) return;
+    popout.__popoutDelegatedEventsCloned = true;
     const jq = popout.jQuery || window.jQuery;
     const clone = (name, target) => {
       const events = this.jqListeners[name];
@@ -765,6 +767,8 @@ _removeNativeListener(targetName, type, listener, options) {
 
   cloneNativeEventListeners(popout) {
     const origAdd = this._origAddEventListener;
+    const keySet = this._popoutListenerKeys.get(popout) ?? new Set();
+    this._popoutListenerKeys.set(popout, keySet);
     const mirror = {
       document: [],
       body: [],
@@ -789,16 +793,14 @@ _removeNativeListener(targetName, type, listener, options) {
       if (!store || !docTarget) continue;
       for (const [type, handlers] of store.entries()) {
         for (const data of handlers) {
-          const key = this._nativeListenerKey(targetName, type, data.listener, data.options);
-          popout._popout_nativeKeys = popout._popout_nativeKeys || new Set();
-          if (popout._popout_nativeKeys.has(key)) continue;
+          const key = this._listenerKey(targetName, type, data.listener, data.options);
+          if (keySet.has(key)) continue;
+          keySet.add(key);
           origAdd.call(docTarget, type, data.listener, data.options);
-          popout._popout_nativeKeys.add(key);
           mirror[targetName].push({
             type,
             listener: data.listener,
             options: data.options,
-            __popoutKey: key,
           });
         }
       }
@@ -928,10 +930,7 @@ _removeNativeListener(targetName, type, listener, options) {
   _storeJqEvent(target, args) {
     const name = this._getJqTargetName(target);
     if (!name) return;
-    const list = this.jqListeners[name];
-    // De-duplicate identical registrations (common when popouts are opened/closed repeatedly)
-    if (list.some((a) => a.length === args.length && a.every((v, i) => v === args[i]))) return;
-    list.push(args);
+    this.jqListeners[name].push(args);
   }
 
   _removeJqEvent(target, args) {
@@ -1362,7 +1361,7 @@ _removeNativeListener(targetName, type, listener, options) {
                 : "window";
         const store = self.nativeListeners[targetName];
         if (!store.has(type)) store.set(type, []);
-        self._storeNativeListener(targetName, type, listener, options);
+        store.get(type).push({ listener, options });
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed || win === popout) continue;
@@ -1387,8 +1386,6 @@ _removeNativeListener(targetName, type, listener, options) {
               }
             }
           }
-          // We just removed mirrored listeners; clear de-dup keys so re-cloning can re-attach them
-          win._popout_nativeKeys = new Set();
           self.cloneNativeEventListeners(win);
         }
       }
@@ -1415,10 +1412,24 @@ _removeNativeListener(targetName, type, listener, options) {
               : this === popout.document.documentElement
                 ? "documentElement"
                 : "window";
-        self._removeNativeListener(targetName, type, listener, options);
-        // Keep per-window de-duplication state in sync with removals
-        const key = self._nativeListenerKey(targetName, type, listener, options);
-        if (popout._popout_nativeKeys) popout._popout_nativeKeys.delete(key);
+        const store = self.nativeListeners[targetName];
+        const arr = store.get(type);
+        if (arr) {
+          const capture =
+            typeof options === "boolean" ? options : options?.capture;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const item = arr[i];
+            const itemCapture =
+              typeof item.options === "boolean"
+                ? item.options
+                : item.options?.capture;
+            if (item.listener === listener && itemCapture === capture) {
+              arr.splice(i, 1);
+              break;
+            }
+          }
+          if (arr.length === 0) store.delete(type);
+        }
         for (const val of self.poppedOut.values()) {
           const win = val.window;
           if (!win || win.closed || win === popout) continue;
@@ -1443,8 +1454,6 @@ _removeNativeListener(targetName, type, listener, options) {
               }
             }
           }
-          // We just removed mirrored listeners; clear de-dup keys so re-cloning can re-attach them
-          win._popout_nativeKeys = new Set();
           self.cloneNativeEventListeners(win);
         }
       }
@@ -1550,6 +1559,10 @@ _removeNativeListener(targetName, type, listener, options) {
       delete popout._origAddEventListener;
       delete popout._origRemoveEventListener;
       self.mirroredNativeListeners.delete(popout);
+      // Reset dedup state for this window to allow re-cloning cleanly
+      try { self._popoutListenerKeys.delete(popout); } catch { /* ignore */ }
+      try { delete popout.__popoutDelegatedEventsCloned; } catch { /* ignore */ }
+      try { delete popout.__popoutPF2eHandlersBound; } catch { /* ignore */ }
       self.log("Unload event", event);
       if (self.poppedOut.has(app)) {
         const poppedOut = self.poppedOut.get(app);
@@ -1885,6 +1898,10 @@ _removeNativeListener(targetName, type, listener, options) {
       // Always refresh event listeners when the window loads so they
       // are re-mirrored on subsequent openings.
       self.mirroredNativeListeners.delete(popout);
+      // Reset dedup state for this window to allow re-cloning cleanly
+      try { self._popoutListenerKeys.delete(popout); } catch { /* ignore */ }
+      try { delete popout.__popoutDelegatedEventsCloned; } catch { /* ignore */ }
+      try { delete popout.__popoutPF2eHandlersBound; } catch { /* ignore */ }
       if (
         game.settings.get("popout", "cloneDocumentEvents") ||
         game.system.id === "pf2e"
@@ -1913,14 +1930,13 @@ _removeNativeListener(targetName, type, listener, options) {
               }
               if (!pf2eHandlers || typeof pf2eHandlers.click !== "function")
                 return;
-              if (!popout._popout_pf2eSheetHandlerBound) {
+              if (popout.__popoutPF2eHandlersBound) return;
+              popout.__popoutPF2eHandlersBound = true;
               popout.document.documentElement.addEventListener(
                 "click",
                 pf2eHandlers.click,
                 true,
               );
-              popout._popout_pf2eSheetHandlerBound = true;
-            }
               for (const { selector, event, handlerName } of PF2E_LISTENERS) {
                 const handler = pf2eHandlers[handlerName];
                 if (typeof handler !== "function") continue;
@@ -1940,6 +1956,8 @@ _removeNativeListener(targetName, type, listener, options) {
       self.cloneNativeEventListeners(popout);
 
       popout.game = game;
+      // Patch tooltipster in the popout window too (PF2e)
+      self._patchTooltipsterNoThrow(popout);
 
       // Only try to setup tooltip manager if it exists
       if (popout.tooltip_manager && popout.document.getElementById("tooltip")) {
@@ -2087,6 +2105,8 @@ Hooks.once("ready", () => {
   }
 
   PopoutModule.singleton = new PopoutModule();
+  // PF2e tooltipster safety: avoid hard errors when tooltips are double-destroyed during popout teardown
+  try { PopoutModule.singleton._patchTooltipsterNoThrow(window); } catch { /* ignore */ }
   PopoutModule.singleton.init();
 
   // Add ApplicationV2 support for v13 using instance interception
